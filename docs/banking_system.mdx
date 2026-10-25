@@ -1,0 +1,132 @@
+import Callout from '@/components/Callout'
+import CodeBlock from '@/components/CodeBlock'
+
+# Advanced Backend Banking System: Notes & Summary
+
+<Callout type="info">
+  **Tech Stack:** Node.js, Express, MongoDB/Mongoose, JSON Web Tokens (JWT)
+</Callout>
+
+---
+
+## 1. System Architecture & Core Concepts
+
+When building a backend financial module, simply updating a numerical balance field in a user schema is insufficient for real-world production environments. The instructor introduces a **Ledger-based System**.
+
+### Why Use a Ledger?
+* **Immutability:** Every monetary movement (deposit, withdrawal, peer-to-peer transfer) is stored as a permanent record.
+* **Auditability:** Provides a clear paper trail for reconciliation, troubleshooting, and compliance.
+* **Atomicity:** Ensures that money is neither created nor lost during failed or interrupted transactions.
+
+---
+
+## 2. Key Database Schemas
+
+### A. User / Account Schema
+Represents the account holder's base details and credentials.
+
+<CodeBlock language="javascript">
+{`const userSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  email:    { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  balance:  { type: Number, default: 0, min: 0 }
+}, { timestamps: true });`}
+</CodeBlock>
+
+### B. Transaction / Ledger Schema
+Stores immutable logs for every account activity.
+
+<CodeBlock language="javascript">
+{`const transactionSchema = new mongoose.Schema({
+  sender: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  receiver: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
+  amount: { 
+    type: Number, 
+    required: true,
+    min: [1, 'Amount must be greater than zero']
+  },
+  type: { 
+    type: String, 
+    enum: ['TRANSFER', 'DEPOSIT', 'WITHDRAWAL'], 
+    required: true 
+  },
+  status: { 
+    type: String, 
+    enum: ['PENDING', 'SUCCESS', 'FAILED'], 
+    default: 'PENDING' 
+  }
+}, { timestamps: true });`}
+</CodeBlock>
+
+---
+
+## 3. Transaction Logic & Business Rules
+
+The backend transfer service handles the primary ledger operations and enforces strict validation rules.
+
+### Essential Validations
+1. **Self-Transfer Prevention:** Users cannot send funds to their own account ID.
+2. **Positive Value Check:** The transaction `amount` must be greater than zero.
+3. **Sufficient Balance Check:** Sender must have a balance $\ge$ transfer amount.
+
+<CodeBlock language="javascript">
+{`// Pseudocode overview of transfer logic
+async function transferFunds(senderId, receiverId, amount) {
+  if (senderId === receiverId) {
+    throw new Error("Cannot transfer money to yourself.");
+  }
+  
+  const sender = await User.findById(senderId);
+  if (sender.balance < amount) {
+    throw new Error("Insufficient account balance.");
+  }
+
+  // Deduct from sender & add to receiver
+  sender.balance -= amount;
+  await sender.save();
+
+  await User.findByIdAndUpdate(receiverId, { 
+    $inc: { balance: amount } 
+  });
+
+  // Record ledger item
+  const ledgerEntry = await Transaction.create({
+    sender: senderId,
+    receiver: receiverId,
+    amount,
+    type: 'TRANSFER',
+    status: 'SUCCESS'
+  });
+
+  return ledgerEntry;
+}`}
+</CodeBlock>
+
+---
+
+## 4. API Endpoints & Security
+
+All banking-related routes must be protected using JWT authentication middleware to ensure that users can only initiate requests or view ledger data for their own authorized session.
+
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/account/transfer` | Execute a fund transfer | Yes |
+| `GET` | `/api/v1/account/balance` | Fetch current account balance | Yes |
+| `GET` | `/api/v1/account/history` | View ledger transaction history | Yes |
+
+---
+
+## 5. Deployment Checklist
+
+1. **Environment Variables (`.env`):** Store database connection strings (`MONGO_URI`), JWT secrets (`JWT_SECRET`), and port configurations safely.
+2. **Health Check Endpoint:** Expose a basic root route (e.g., `/health`) returning system status to verify server connectivity post-deployment.
+3. **Database Connection Verification:** Ensure IP whitelist configurations in MongoDB Atlas allow access from the production server host.
