@@ -234,9 +234,6 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
       { session },
     );
 
-    // artificial delay used to demonstrate the PENDING state / session rollback
-    await new Promise((resolve) => setTimeout(resolve, 15 * 1000));
-
     /**
      * 7. Create CREDIT ledger entry
      * Adds the amount to the receiver's account.
