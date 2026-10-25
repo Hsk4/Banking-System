@@ -7,8 +7,9 @@ import accountModel from "../models/account.model";
  *
  * FLOW:
  * 1. Read the authenticated user attached by `authMiddleware`
- * 2. Create an ACTIVE account denominated in PKR owned by that user
- * 3. Return the created account
+ * 2. Reject with 409 when the user already holds an ACTIVE account
+ * 3. Create an ACTIVE account denominated in PKR owned by that user
+ * 4. Return the created account
  *
  * @param req - The request object containing the authenticated user information.
  * @param res - The response object used to send back the created account or an error message.
@@ -19,14 +20,28 @@ async function createAccountController(req: Request, res: Response): Promise<voi
   // 1. the user was attached by the auth middleware
   const user = req.user;
 
-  // 2. build the new account - owned by the current user and ACTIVE by default
+  // 2. the UI offers "open account" exactly once - refuse a second one clearly
+  const existingAccount = await accountModel.findOne({
+    users: user._id,
+    status: "ACTIVE",
+  });
+
+  if (existingAccount) {
+    res.status(409).json({
+      message: "You already have an active account",
+      account: existingAccount,
+    });
+    return;
+  }
+
+  // 3. build the new account - owned by the current user and ACTIVE by default
   const account = new accountModel({
     users: [user._id],
     status: "ACTIVE",
     currency: "PKR",
   });
 
-  // 3. persist and return the created account with a 201 Created
+  // 4. persist and return the created account with a 201 Created
   const savedAccount = await account.save();
   res.status(201).json(savedAccount);
 }

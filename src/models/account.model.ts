@@ -73,12 +73,12 @@ const accountSchema = new mongoose.Schema<
 );
 
 /**
- * - Compound unique index
- * Prevents the same user from holding two accounts with the same status,
- * which would otherwise let a single user end up with duplicate active
- * accounts.
+ * - Owner lookup
+ * A user may hold several accounts (one per currency, plus closed/frozen
+ * ones they can still read), so this is deliberately NOT unique: only one
+ * ACTIVE account per owner is enforced in the controller, with a clear 409.
  */
-accountSchema.index({ users: 1, status: 1 }, { unique: true });
+accountSchema.index({ users: 1, status: 1 });
 
 /**
  * - getBalance implementation
