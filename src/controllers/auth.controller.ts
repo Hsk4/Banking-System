@@ -30,10 +30,13 @@ function signToken(userId: unknown): string {
  * @param token - the signed JWT
  */
 function setAuthCookie(res: Response, token: string): void {
+  const isProduction = process.env.NODE_ENV === "production";
+
   res.cookie("token", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // the cookie is set on the API origin and read back by the UI origin
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
     maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days, matching the JWT lifetime
   });
 }
@@ -94,7 +97,12 @@ async function userRegister(req: Request, res: Response): Promise<void> {
   // 6. respond before sending the mail so a slow mail server cannot delay it
   res.status(201).json({
     message: "User registered successfully",
-    user: { _id: user._id, email: user.email, name: user.name },
+    user: {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      systemUser: user.systemUser,
+    },
     token,
   });
 
@@ -157,7 +165,12 @@ async function userLogin(req: Request, res: Response): Promise<void> {
 
   res.status(200).json({
     message: "User logged in successfully",
-    user: { _id: user._id, email: user.email, name: user.name },
+    user: {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      systemUser: user.systemUser,
+    },
     token,
   });
 }

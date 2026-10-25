@@ -12,6 +12,43 @@ import transactionRoutes from "./routes/transaction.routes";
  */
 const app = express();
 
+/**
+ * - Allowed browser origins
+ * The UI calls the API from its own origin, so the cookie must be readable
+ * cross-site. Comma-separate `CORS_ORIGIN` for more than one (local dev plus
+ * the Vercel domain); a single value works too.
+ */
+const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+/**
+ * - CORS
+ * Must run before the routers so preflights and every response carry the
+ * headers. `credentials: true` is required for the httpOnly auth cookie, and
+ * it means the origin has to be echoed explicitly instead of `*`.
+ */
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  }
+
+  // answer preflights without touching any route or the database
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+
+  next();
+});
+
 // parse cookies so the auth middleware can read the `token` cookie
 app.use(cookieParser());
 
