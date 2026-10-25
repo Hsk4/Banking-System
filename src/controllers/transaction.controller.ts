@@ -6,7 +6,8 @@
  * THE 10-STEP TRANSFER FLOW:
  * 1. Validate request (required fields, positive amount, distinct accounts)
  * 2. Validate idempotency key (replay an earlier result if one exists)
- * 3. Check account status (both accounts must be ACTIVE)
+ * 3. Check account status (both accounts must be ACTIVE and the caller must
+ *    own the source account)
  * 4. Derive sender balance from ledger (inside the session)
  * 5. Create transaction (PENDING)
  * 6. Create DEBIT ledger entry
@@ -142,8 +143,15 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
   }
 
   /**
-   * 3. Check account status
+   * 3. Check account status and ownership
    */
+
+  // only the owner of the source account may move money out of it
+  if (!fromUserAccount.users.some((owner) => owner.equals(req.user._id))) {
+    return res.status(403).json({
+      message: "You are not allowed to transfer from this account",
+    });
+  }
 
   // if either the fromAccount or toAccount is not ACTIVE, return an error
   if (
