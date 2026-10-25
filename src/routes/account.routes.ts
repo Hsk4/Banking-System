@@ -16,7 +16,7 @@ const router = express.Router();
  *
  * @see createAccount
  */
-router.post("/", authMiddleware.authSystemUserMiddleware, accountController.createAccount);
+router.post("/", authMiddleware.authMiddleware, accountController.createAccount);
 
 /**
  * GET /api/accounts/
