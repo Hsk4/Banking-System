@@ -68,6 +68,10 @@ export async function postEntries(
     );
   }
 
+  // A posting is always two documents, and Mongoose 9 refuses `create()` with
+  // a session and multiple documents unless `ordered` is set. Ordered is also
+  // what we want: the entries belong to one transaction, so if the second
+  // insert fails the whole session is rolled back by the caller.
   return ledgerModel.create(
     entries.map((entry) => ({
       account: entry.account,
@@ -75,7 +79,7 @@ export async function postEntries(
       transaction: transactionId,
       type: entry.type,
     })),
-    { session },
+    { session, ordered: true },
   );
 }
 

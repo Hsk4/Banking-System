@@ -68,6 +68,41 @@ async function abortSession(session: mongoose.ClientSession): Promise<void> {
   }
 }
 
+/**
+ * - Log a transaction failure in full
+ * The response stays generic on purpose, so the server console is the only
+ * place the real cause appears. Mongo attaches the useful fields
+ * (`code`, `codeName`, `errorLabels`) to the thrown error without typing
+ * them, which is why they are read through a cast.
+ *
+ * @param step - which flow failed, "transfer" or "funding"
+ * @param error - whatever the try block threw
+ */
+function logTransactionFailure(step: string, error: unknown): void {
+  const mongoError = error as {
+    name?: string;
+    message?: string;
+    code?: number;
+    codeName?: string;
+    errorLabels?: string[];
+    stack?: string;
+    writeErrors?: unknown;
+    keyPattern?: unknown;
+    keyValue?: unknown;
+  };
+
+  console.error(`[${step}] TRANSACTION FAILED`, {
+    name: mongoError?.name,
+    message: mongoError?.message,
+    code: mongoError?.code,
+    codeName: mongoError?.codeName,
+    errorLabels: mongoError?.errorLabels,
+    keyPattern: mongoError?.keyPattern,
+    keyValue: mongoError?.keyValue,
+    stack: mongoError?.stack,
+  });
+}
+
 async function createTransaction(req: AuthenticatedRequest, res: Response) {
   /**
    * 1. Validate reques t
@@ -256,6 +291,7 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
      */
     await session.commitTransaction();
   } catch (error) {
+    logTransactionFailure("transfer", error);
     // the session was not committed, so nothing was actually transferred
     if (session) {
       await abortSession(session);
@@ -448,6 +484,7 @@ async function createInitialFundsTransaction(
 
     await session.commitTransaction();
   } catch (error) {
+    logTransactionFailure("funding", error);
     // the session was not committed, so nothing was actually transferred
     if (session) {
       await abortSession(session);
