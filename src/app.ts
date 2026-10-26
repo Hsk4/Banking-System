@@ -24,6 +24,16 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
   .filter(Boolean);
 
 /**
+ * - Origins the native shells are served from
+ * Capacitor serves a static export from the WebView's own scheme rather than a
+ * public domain: `https://localhost` on Android, `capacitor://localhost` on
+ * iOS. They are not something an operator should have to remember to paste into
+ * a dashboard, and a missing one fails every native request with an opaque
+ * fetch error. They are always allowed.
+ */
+const NATIVE_ORIGINS = ["https://localhost", "capacitor://localhost"];
+
+/**
  * - CORS
  * Must run before the routers so preflights and every response carry the
  * headers. `credentials: true` is required for the httpOnly auth cookie, and
@@ -32,7 +42,10 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:3000")
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (
+    origin &&
+    (allowedOrigins.includes(origin) || NATIVE_ORIGINS.includes(origin))
+  ) {
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Vary", "Origin");
