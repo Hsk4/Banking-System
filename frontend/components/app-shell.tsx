@@ -14,12 +14,37 @@ import {
 import { useTheme } from "next-themes";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/cn";
+import type { User } from "@/lib/types";
 
-/** The two main destinations shown in the top bar and the mobile bottom bar. */
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transfer", label: "Transfer", icon: ArrowLeftRight },
-] as const;
+/** One entry in the top bar and the mobile bottom bar. */
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+/** Where each role is sent by the wordmark. */
+export function homeFor(user: User | null): string {
+  return user?.systemUser ? "/admin/fund" : "/dashboard";
+}
+
+/**
+ * - Navigation for the signed-in user
+ * A system user is a pure administrator: they hold no accounts of their own,
+ * so the customer destinations would only fail for them.
+ *
+ * `user` is null for the first frame after hydration, so a flash of the
+ * customer links is possible for an admin - acceptable for now.
+ */
+function navFor(user: User | null): NavItem[] {
+  if (user?.systemUser) {
+    return [{ href: "/admin/fund", label: "Fund account", icon: Wrench }];
+  }
+  return [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/transfer", label: "Transfer", icon: ArrowLeftRight },
+  ];
+}
 
 /**
  * - Active link state
@@ -165,15 +190,17 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
           <div className="mt-1">
             <ThemeToggleItem onChoose={() => setOpen(false)} />
 
-            <Link
-              href="/admin/fund"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
-            >
-              <Wrench className="size-4 text-muted-foreground" />
-              Admin: fund account
-            </Link>
+            {user?.systemUser ? (
+              <Link
+                href="/admin/fund"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
+              >
+                <Wrench className="size-4 text-muted-foreground" />
+                Admin: fund account
+              </Link>
+            ) : null}
 
             <button
               type="button"
@@ -258,29 +285,30 @@ function BottomNavLink({
 
 /**
  * - App shell
- * 56px top bar with the wordmark, the two nav links and the avatar menu;
+ * 56px top bar with the wordmark, the role's nav links and the avatar menu;
  * content capped at 960px; a fixed bottom bar below `md`.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
+  const nav = navFor(user);
 
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-border bg-card">
         <div className="mx-auto flex h-14 max-w-240 items-center gap-2 px-4 md:gap-8 md:px-6">
           <Link
-            href="/dashboard"
+            href={homeFor(user)}
             className="text-base font-semibold tracking-tight"
           >
             Ledger
           </Link>
 
-          {/* no top nav below md: the mobile menu and the bottom bar cover it */}
+          {/* no top nav below md: the bottom bar covers it */}
           <nav
             className="hidden h-full items-center gap-6 md:flex"
             aria-label="Main"
           >
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <TopNavLink key={item.href} href={item.href} label={item.label} />
             ))}
           </nav>
@@ -300,7 +328,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
       >
-        {NAV.map((item) => (
+        {nav.map((item) => (
           <BottomNavLink
             key={item.href}
             href={item.href}

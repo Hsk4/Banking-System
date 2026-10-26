@@ -13,7 +13,13 @@ import type { NextRequest } from "next/server";
  * lands on our own domain.
  */
 
-/** Hop-by-hop headers, plus ones recomputed for the request we rebuild below. */
+/**
+ * Hop-by-hop headers, plus ones recomputed for the request we rebuild below.
+ *
+ * `expect` must go: an `Expect: 100-continue` from any client makes undici's
+ * fetch throw `UND_ERR_NOT_SUPPORTED (expect header not supported)`, which
+ * surfaced as a 502 on every POST from clients that send it.
+ */
 const DROPPED_REQUEST_HEADERS = [
   "host",
   "connection",
@@ -24,6 +30,7 @@ const DROPPED_REQUEST_HEADERS = [
   "upgrade",
   "content-length",
   "accept-encoding",
+  "expect",
 ];
 
 /** `content-length` / `content-encoding` are recomputed for the rebuilt body. */
@@ -85,7 +92,10 @@ async function forward(request: NextRequest): Promise<Response> {
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    // keep the cause in the server log: a 502 with no reason is impossible to
+    // debug from the browser
+    console.error(`[api-proxy] ${method} ${target} failed`, error);
     return Response.json(
       { message: "Could not reach the server. Please try again." },
       { status: 502 },

@@ -8,8 +8,10 @@ type Size = "md" | "sm" | "icon";
 const variants: Record<Variant, string> = {
   primary:
     "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-primary/50",
+  // the hover is a tint, not a fill: a secondary action must never read as
+  // the teal primary sitting beside it
   outline:
-    "border border-border bg-card text-foreground hover:bg-accent disabled:opacity-50",
+    "border border-border bg-card text-foreground hover:border-primary/40 hover:bg-accent/40 disabled:opacity-50",
   ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
 };
 

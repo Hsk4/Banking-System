@@ -2,8 +2,10 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ApiError, createInitialFunds } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { isObjectId } from "@/lib/format";
 import {
   BackToDashboard,
@@ -17,23 +19,31 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 type Result = { amount: number; toAccount: string; status: string };
 type Errors = { to?: string; amount?: string };
 
-/** The backend's longest transfer window, mirrored from the transfer page. */
+/** Shown while the commit is in flight, mirroring the transfer page. */
 const TRANSFER_TIMEOUT_NOTE =
-  "This can take up to 15 seconds. Please keep this page open.";
+  "This usually takes a few seconds. Please keep this page open.";
 
 /**
  * - Admin fund view (`/admin/fund`)
  * System users only. The proxy cannot verify the JWT, so the real gate is the
- * 401 from the API, which renders a full-card message.
+ * API: a non-system user gets a 403, which renders the full-card message.
+ *
+ * Reads `?to=<accountId>` so an admin can arrive here from an account row with
+ * the recipient already filled in.
  */
 export function AdminFundView() {
-  const [toAccount, setToAccount] = useState("");
+  const searchParams = useSearchParams();
+  const { handleUnauthorized } = useAuth();
+
+  const [toAccount, setToAccount] = useState(searchParams.get("to") ?? "");
   const [amount, setAmount] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  /** the last request was accepted but is still being committed */
+  const [stillProcessing, setStillProcessing] = useState(false);
 
   // stable across retries of the same intent; rotated when the input changes
   const idempotencyKey = useRef(crypto.randomUUID());
@@ -59,31 +69,51 @@ export function AdminFundView() {
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setServerError(null);
+    setStillProcessing(false);
     if (!validate()) return;
 
     const numeric = Number(amount);
     setPending(true);
     try {
-      const response = await createInitialFunds({
+      const { status, data: response } = await createInitialFunds({
         toAccount: toAccount.trim(),
         amount: numeric,
         idempotencyKey: idempotencyKey.current,
       });
-      // a 200 replay means these funds were already added with this key
-      const replayed = /already (processed|completed)/i.test(response.message);
+
+      // 202 is a success response: accepted, still committing. Keep the key so
+      // a second submit safely asks "is it done?" instead of adding again.
+      if (status === 202) {
+        setStillProcessing(true);
+        return;
+      }
+
+      // 200 is a replay of a key the server already committed
+      const replayed =
+        status === 200 ||
+        /already (processed|completed)/i.test(response.message);
+      // This panel says "Funds added", so it must not print a PENDING status:
+      // an unfinished row belongs to the "still processing" branch above.
+      const transactionStatus =
+        response.transaction?.status && response.transaction.status !== "PENDING"
+          ? response.transaction.status
+          : "COMPLETED";
       setResult({
         amount: numeric,
         toAccount: toAccount.trim(),
-        status: response.transaction?.status ?? "COMPLETED",
+        status: transactionStatus,
       });
       if (replayed) {
         toast.info("These funds had already been added.");
       }
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        // the system-user middleware answers 401 for a normal session too,
-        // so this is either an expired session or a non-system user
+      if (error instanceof ApiError && error.status === 403) {
+        // a valid session that is not a system user
         setForbidden(true);
+      } else if (error instanceof ApiError && error.status === 401) {
+        // a missing or expired session: back to /login, not the admin message
+        handleUnauthorized();
+        return;
       } else {
         const message =
           error instanceof Error ? error.message : "Could not add funds";
@@ -157,11 +187,38 @@ export function AdminFundView() {
       ) : (
         <Card className="relative overflow-hidden border p-5 sm:p-6 max-sm:-mx-4 max-sm:rounded-none max-sm:border-x-0">
           <Alert tone="warning">
-            System users only. Funds are created from the system account.
+            System users only. Funds are created from the treasury account.
           </Alert>
 
-          <form onSubmit={onSubmit} className="mt-5 space-y-5" noValidate>
+          <form
+            id="fund-form"
+            onSubmit={onSubmit}
+            className="mt-5 space-y-5"
+            noValidate
+          >
             {serverError ? <Alert tone="danger">{serverError}</Alert> : null}
+
+            {stillProcessing ? (
+              <Alert tone="warning" title="Still processing">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>
+                    The server accepted this funding and is finishing it.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const form = document.getElementById(
+                        "fund-form",
+                      ) as HTMLFormElement | null;
+                      form?.requestSubmit();
+                    }}
+                    className="font-medium underline"
+                  >
+                    Check again
+                  </button>
+                </div>
+              </Alert>
+            ) : null}
 
             <div>
               <Label htmlFor="to">To account</Label>

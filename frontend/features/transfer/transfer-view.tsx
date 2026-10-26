@@ -201,16 +201,25 @@ function TransferForm() {
     setPhase({ kind: "sending" });
 
     try {
-      const response = await createTransfer({
+      const { status, data: response } = await createTransfer({
         fromAccount,
         toAccount: to,
         amount: value,
         idempotencyKey: idempotencyKey.current,
       });
       if (!mounted.current) return;
-      // A replay of a key the server already committed comes back as a 200
-      // "already processed" - it is a success, just not a fresh one.
-      const replayed = /already (processed|completed)/i.test(response.message);
+
+      // 202 is a successful response, so it never reaches the catch block:
+      // the server accepted the request and is still committing it.
+      if (status === 202) {
+        setPhase({ kind: "processing", amount: value, toAccount: to });
+        return;
+      }
+
+      // 200 means this key had already been committed - a success, just not a
+      // fresh one. 201 is the normal first-time commit.
+      const replayed =
+        status === 200 || /already (processed|completed)/i.test(response.message);
       setPhase({
         kind: "sent",
         title: replayed ? "Already processed" : "Transfer complete",
@@ -225,11 +234,6 @@ function TransferForm() {
       void loadAccounts();
     } catch (error) {
       if (!mounted.current) return;
-
-      if (error instanceof ApiError && error.status === 202) {
-        setPhase({ kind: "processing", amount: value, toAccount: to });
-        return;
-      }
 
       if (error instanceof ApiError && error.status === 401) {
         handleUnauthorized();
@@ -246,11 +250,11 @@ function TransferForm() {
           ? `${message} You can safely try again.`
           : message,
       );
-      if (
-        error instanceof ApiError &&
-        (error.status === 409 || error.status === 408)
-      ) {
-        // the server told us to retry with a new key
+      if (error instanceof ApiError && error.status === 409) {
+        // the key belongs to a failed or reversed transfer, so retrying it
+        // would replay that failure: the next attempt needs a new key.
+        // A 408 timeout is different - it may have committed on the server,
+        // so the retry must reuse the same key.
         rotateKey();
       }
       setPhase({ kind: "idle" });
@@ -345,13 +349,15 @@ function TransferForm() {
           note="Checking again reuses the same request, so this cannot send the money twice."
           actions={
             <>
+              {/* one primary on the card: asking the server is the next step,
+                  going back is the secondary escape */}
               <Button
                 className="flex-1 justify-center"
                 onClick={onCheckAgain}
               >
                 Check again
               </Button>
-              <BackToDashboard />
+              <BackToDashboard variant="outline" />
             </>
           }
         />
@@ -531,7 +537,7 @@ function TransferForm() {
 
         {sending ? (
           <div className="space-y-1 text-center text-xs text-muted-foreground">
-            <p>This can take up to 15 seconds. Please keep this page open.</p>
+            <p>This usually takes a few seconds. Please keep this page open.</p>
             <Elapsed />
           </div>
         ) : null}

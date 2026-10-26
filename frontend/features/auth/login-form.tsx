@@ -67,7 +67,8 @@ export function LoginForm() {
     try {
       const response = await login({ email: email.trim(), password });
       signIn(response.user);
-      router.replace("/dashboard");
+      // a system user holds no customer accounts; the fund page is their home
+      router.replace(response.user.systemUser ? "/admin/fund" : "/dashboard");
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught.message : errorMessage(caught),

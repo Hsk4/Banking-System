@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CircleCheck, Clock } from "lucide-react";
-import { formatMoney, shortId } from "@/lib/format";
+import { formatAmount, shortId } from "@/lib/format";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -63,15 +63,18 @@ export function TransactionResult({
         {title}
       </h2>
       {/* never wrap: a receipt amount must read as one number */}
-      <p className="mt-2 whitespace-nowrap text-[30px] font-semibold leading-tight tracking-tight tabular-nums">
-        {formatMoney(amount)}
+      <p className="mt-2 flex items-baseline justify-center gap-1.5 whitespace-nowrap tracking-tight">
+        <span className="text-sm font-medium text-muted-foreground">PKR</span>
+        <span className="text-[30px] font-semibold leading-tight tabular-nums">
+          {formatAmount(amount)}
+        </span>
       </p>
 
       <dl className="mt-5 space-y-2 rounded-(--radius) border border-border bg-muted px-3 py-2.5 text-left text-sm">
         <div className="flex items-center justify-between gap-3">
           <dt className="text-muted-foreground">To account</dt>
           <dd className="truncate font-mono text-xs" title={toAccount}>
-            {shortId(toAccount, 10)}
+            {shortId(toAccount, 12)}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3">
@@ -93,12 +96,19 @@ export function TransactionResult({
 
 /**
  * - Back to dashboard
- * The primary exit from every receipt; kept here so both forms agree.
+ * The usual exit from a receipt. Primary by default; pass `variant="outline"`
+ * when the panel has a more important next step, since one accent per screen.
  */
-export function BackToDashboard() {
+export function BackToDashboard({
+  variant = "primary",
+}: {
+  variant?: "primary" | "outline";
+}) {
   return (
     <Link href="/dashboard" className="flex-1">
-      <Button fullWidth>Back to dashboard</Button>
+      <Button variant={variant} fullWidth>
+        Back to dashboard
+      </Button>
     </Link>
   );
 }

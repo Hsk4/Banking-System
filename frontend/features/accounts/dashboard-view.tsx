@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Copy, RefreshCw, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
@@ -96,13 +97,20 @@ function AccountCard({
             </button>
           </div>
         ) : (
-          // the spec's "numbers come first" role: 30px on mobile, 36px up
-          <p className="flex items-baseline gap-1.5 text-[30px] font-semibold leading-none tracking-tight sm:text-[36px]">
-            <span className="text-base font-medium text-muted-foreground">
-              PKR
-            </span>
-            <span className="tabular-nums">{formatAmount(state.balance)}</span>
-          </p>
+          <div>
+            {/* the spec's "numbers come first" role: 30px on mobile, 36px up */}
+            <p className="flex items-baseline gap-1.5 text-[30px] font-semibold leading-none tracking-tight sm:text-[36px]">
+              <span className="text-base font-medium text-muted-foreground">
+                PKR
+              </span>
+              <span className="tabular-nums">{formatAmount(state.balance)}</span>
+            </p>
+            {state.balance === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                No funds yet. An administrator can add funds to this account.
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
 
@@ -155,9 +163,18 @@ function AccountCardSkeleton() {
  * - Dashboard
  * Lists accounts, loads each balance in parallel, and opens new accounts
  * through a dialog. Shows a cold-start hint if the backend is waking up.
+ *
+ * A system user holds no customer accounts, so they are sent to the fund page.
+ * The proxy cannot do this itself: it only sees that a cookie exists.
  */
 export function DashboardView() {
-  const { handleUnauthorized } = useAuth();
+  const { handleUnauthorized, user } = useAuth();
+  const router = useRouter();
+  const isSystemUser = user?.systemUser === true;
+
+  useEffect(() => {
+    if (isSystemUser) router.replace("/admin/fund");
+  }, [isSystemUser, router]);
 
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -272,6 +289,12 @@ export function DashboardView() {
       if (error instanceof ApiError && error.status === 401) {
         handleUnauthorized();
         setDialogOpen(false);
+      } else if (error instanceof ApiError && error.status === 409) {
+        // the user already has an active account: that is the outcome the
+        // dialog was asking for, so treat it as success and show the list
+        setDialogOpen(false);
+        toast.info("You already have an active account.");
+        await load();
       } else {
         setOpenError(
           error instanceof ApiError
@@ -286,9 +309,11 @@ export function DashboardView() {
 
   const loadingList = !loaded || accounts === null;
   const hasAccounts = (accounts?.length ?? 0) > 0;
-  // the account model allows several accounts, so the action stays available
-  // until the list has loaded
-  const showHeaderAction = loadingList || hasAccounts;
+  // one active account is all a customer can hold, so once the list shows an
+  // active one the action disappears. While loading, or with only a frozen or
+  // closed account, it stays available.
+  const hasActiveAccount = accounts?.some((a) => a.status === "ACTIVE") ?? false;
+  const showHeaderAction = !hasActiveAccount;
 
   return (
     <div>

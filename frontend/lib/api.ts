@@ -22,12 +22,23 @@ export class ApiError extends Error {
   }
 }
 
-/** Options accepted by {@link api}. */
+/** Options accepted by {@link api} and {@link apiWithStatus}. */
 interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
   /** abort the request after this many milliseconds (cold starts need a long one) */
   timeoutMs?: number;
+}
+
+/**
+ * - Response with its HTTP status
+ * Some replies carry meaning in the status code itself: a 202 from a transfer
+ * means "accepted, still processing", which is a success for `fetch` but must
+ * not be shown as complete.
+ */
+export interface ApiResult<T> {
+  status: number;
+  data: T;
 }
 
 /** How long to wait for a transfer before giving up (Render cold start + commit). */
@@ -36,20 +47,21 @@ export const TRANSFER_TIMEOUT_MS = 45_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 /**
- * - Fetch wrapper
- * Calls the API through the same-origin `/api/*` rewrite (see `next.config.ts`),
- * so the httpOnly auth cookie is sent automatically. Every path here is
- * relative: never hard-code the backend URL in client code.
+ * - Fetch wrapper, keeping the status
+ * Calls the API through the same-origin `/api/*` proxy route (see
+ * `app/api/[...path]/route.ts`), so the httpOnly auth cookie is sent
+ * automatically. Every path here is relative: never hard-code the backend URL
+ * in client code.
  *
  * @param path - path under `/api`, e.g. `"/accounts"`
  * @param options - method, JSON body, timeout
- * @returns the parsed JSON body
+ * @returns the parsed JSON body together with the HTTP status
  * @throws {ApiError} for non-2xx responses, and for network/timeout failures
  */
-export async function api<T>(
+export async function apiWithStatus<T>(
   path: string,
   options: RequestOptions = {},
-): Promise<T> {
+): Promise<ApiResult<T>> {
   const { method = "GET", body, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
 
   const controller = new AbortController();
@@ -60,7 +72,10 @@ export async function api<T>(
     response = await fetch(`/api${path}`, {
       method,
       credentials: "include",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      // Only announce a JSON body when there is one: Express's JSON parser
+      // rejects `Content-Type: application/json` with an empty body, which
+      // broke bodyless POSTs like opening an account and logging out.
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" }, 
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       // balances change constantly - never serve a cached copy
@@ -87,7 +102,23 @@ export async function api<T>(
     throw new ApiError(response.status, message);
   }
 
-  return data as T;
+  return { status: response.status, data: data as T };
+}
+
+/**
+ * - Fetch wrapper
+ * The common case: callers that only care about the body.
+ * @param path - path under `/api`
+ * @param options - method, JSON body, timeout
+ * @returns the parsed JSON body
+ * @throws {ApiError} for non-2xx responses, and for network/timeout failures
+ */
+export async function api<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const { data } = await apiWithStatus<T>(path, options);
+  return data;
 }
 
 /* ------------------------------------------------------------------ */
@@ -157,12 +188,17 @@ export interface TransferInput {
 
 /**
  * Move money between accounts.
+ *
+ * Returns the status alongside the body: 201 is a fresh commit, 200 is a
+ * key that had already been processed, and 202 means the server accepted it
+ * but is still committing.
+ *
  * @param input - source, destination, amount and a stable idempotency key
  */
 export function createTransfer(
   input: TransferInput,
-): Promise<TransferResponse> {
-  return api<TransferResponse>("/transactions", {
+): Promise<ApiResult<TransferResponse>> {
+  return apiWithStatus<TransferResponse>("/transactions", {
     method: "POST",
     body: input,
     timeoutMs: TRANSFER_TIMEOUT_MS,
@@ -171,16 +207,23 @@ export function createTransfer(
 
 /**
  * Seed an account with funds. System users only.
+ *
+ * The money comes out of the system treasury, so the treasury balance is the
+ * total issued. Same status meanings as {@link createTransfer}.
+ *
  * @param input - destination, amount and idempotency key
  */
 export function createInitialFunds(input: {
   toAccount: string;
   amount: number;
   idempotencyKey: string;
-}): Promise<TransferResponse> {
-  return api<TransferResponse>("/transactions/system/initial-funds", {
-    method: "POST",
-    body: input,
-    timeoutMs: TRANSFER_TIMEOUT_MS,
-  });
+}): Promise<ApiResult<TransferResponse>> {
+  return apiWithStatus<TransferResponse>(
+    "/transactions/system/initial-funds",
+    {
+      method: "POST",
+      body: input,
+      timeoutMs: TRANSFER_TIMEOUT_MS,
+    },
+  );
 }
