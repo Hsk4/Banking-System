@@ -102,7 +102,8 @@ async function authMiddleware(
  * 2. Reject the request when no token is present
  * 3. Reject the request when the token has been blacklisted (logged out)
  * 4. Verify the token and load the user
- * 5. Reject the request unless the user exists and is flagged `systemUser`
+ * 5. Reject with 401 when the user is missing, and 403 when the user is
+ *    valid but is not a system user (a permission problem, not a session one)
  * 6. Attach the user to the request and continue
  *
  * @param req - the request object
@@ -134,9 +135,15 @@ async function authSystemUserMiddleware(
     ? await userModel.findById(decoded.id).select("systemUser")
     : null;
 
-  // 5. only system users may call the privileged endpoints
-  if (!user || !user.systemUser) {
+  // 5a. the token may be valid while the user has since been deleted
+  if (!user) {
     res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  // 5b. a real user without the flag is authenticated but not allowed here
+  if (!user.systemUser) {
+    res.status(403).json({ message: "Forbidden" });
     return;
   }
 

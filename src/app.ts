@@ -36,7 +36,8 @@ app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    // PATCH is needed by the admin routes (account status changes)
+    res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   }
 
