@@ -49,13 +49,54 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 /**
  * Where the API lives when it is not reachable same-origin.
  *
- * On the web this is empty and every call goes to `/api/*`, which the Next
- * proxy route forwards to the backend - the httpOnly cookie is set on our own
- * origin that way. A Capacitor build has no server routes (the Android shell
- * loads a static export), so the app has to talk to the backend directly and
- * the base URL must be absolute.
+ * A static export has no server routes, so the app has to talk to the backend
+ * directly and the base URL must be absolute. `NEXT_PUBLIC_API_URL` is inlined
+ * at build time; when it is unset, `/api/*` requests would hit whatever host
+ * serves the bundle and come back as `index.html` - the source of
+ * `Unexpected token '<'`. The Vercel deployment therefore falls back to the
+ * Render URL instead of assuming a same-origin proxy exists.
  */
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+const RENDER_API_URL = "https://banking-system-r8bq.onrender.com";
+
+const CONFIGURED_API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
+
+const API_BASE_URL = (CONFIGURED_API_URL || RENDER_API_URL).replace(/\/+$/, "");
+
+/**
+ * - Turn a response body into JSON
+ * A static host answers unknown paths with `index.html`, and a proxy or
+ * hosting error answers with an HTML error page. Parsing either of those threw
+ * `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`, which told the
+ * user nothing - and a page that came back with status 200 still slipped past
+ * the non-2xx check, handing `undefined` to the callers. HTML is now always an
+ * error, whatever the status.
+ *
+ * @param text - the raw body
+ * @param status - the HTTP status, used in the message
+ * @returns the parsed JSON
+ * @throws {ApiError} when the body is not JSON
+ */
+function parseBody(text: string, status: number): unknown {
+  if (!text) return {};
+
+  const firstChar = text.trimStart().slice(0, 1);
+  const isHtml = firstChar === "<";
+  if (isHtml) {
+    throw new ApiError(
+      status,
+      "The server answered with a web page instead of data. The API address is probably wrong or the service is down.",
+    );
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new ApiError(
+      status,
+      `The server returned a malformed response (status ${status}).`,
+    );
+  }
+}
 
 /** Where the bearer token is kept when cookies cannot cross origins. */
 export const AUTH_TOKEN_KEY = "banking-ui-token";
@@ -91,10 +132,10 @@ export function setAuthToken(token: string | null): void {
 
 /**
  * - Fetch wrapper, keeping the status
- * Calls the API through the same-origin `/api/*` proxy route (see
- * `app/api/[...path]/route.ts`), so the httpOnly auth cookie is sent
- * automatically. Every path here is relative: never hard-code the backend URL
- * in client code.
+ * Calls the API at {@link API_BASE_URL} + `/api`, and sends the stored bearer
+ * token when there is one. The login cookie is still attempted with
+ * `credentials: "include"`, but it is third-party here, so it is a bonus
+ * rather than the mechanism.
  *
  * @param path - path under `/api`, e.g. `"/accounts"`
  * @param options - method, JSON body, timeout
@@ -118,7 +159,7 @@ export async function apiWithStatus<T>(
 
   // Off-origin builds send the token explicitly: the httpOnly cookie is set
   // on the backend's domain there, where it may be blocked as third-party.
-  const token = API_BASE_URL ? readToken() : null;
+  const token = readToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
@@ -143,7 +184,7 @@ export async function apiWithStatus<T>(
 
   // 204 and empty bodies must not be parsed
   const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : {};
+  const data = parseBody(text, response.status);
 
   if (!response.ok) {
     const message =

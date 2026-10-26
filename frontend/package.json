@@ -12,6 +12,9 @@
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
     "android:open": "cap open android",
+    "android:build": "bun run build:mobile && cap sync android && cd android && gradlew assembleDebug",
+    "android:apk": "bun run android:build",
+    "android:release": "bun run build:mobile && cap sync android && cd android && gradlew assembleRelease",
     "android:run": "bun run build:mobile && cap sync android && cap run android",
     "ios:open": "cap open ios",
     "ios:run": "bun run build:mobile && cap sync ios && cap run ios"
