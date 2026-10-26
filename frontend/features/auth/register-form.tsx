@@ -100,7 +100,7 @@ export function RegisterForm() {
     setPending(true);
     try {
       const response = await register(fields);
-      signIn(response.user);
+      signIn(response.user, response.token);
       // a system user holds no customer accounts; the fund page is their home
       router.replace(response.user.systemUser ? "/admin/fund" : "/dashboard");
     } catch (caught) {

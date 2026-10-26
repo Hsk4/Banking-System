@@ -66,7 +66,7 @@ export function LoginForm() {
     setPending(true);
     try {
       const response = await login({ email: email.trim(), password });
-      signIn(response.user);
+      signIn(response.user, response.token);
       // a system user holds no customer accounts; the fund page is their home
       router.replace(response.user.systemUser ? "/admin/fund" : "/dashboard");
     } catch (caught) {

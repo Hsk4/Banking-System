@@ -1,18 +1,28 @@
 import type { NextConfig } from "next";
 
 /**
- * The browser only ever talks to this origin. `/api/*` is handled by the
- * route handler in `app/api/[...path]/route.ts`, which forwards to the Express
- * API so the login `Set-Cookie` lands on our own domain and is sent back
- * automatically (and no CORS is needed in the browser path).
+ * Static export, so the same build can be loaded by the Capacitor WebView.
  *
- * That handler also strips hop-by-hop headers - a plain `rewrites()` entry
- * passes Express's `Transfer-Encoding: chunked` through alongside
- * `Content-Length`, which HTTP/1.1 servers reject with a 502.
+ * A static export cannot contain server code, so there is no `/api/*` proxy
+ * route any more: the app talks to the Express API directly and the base URL
+ * comes from `NEXT_PUBLIC_API_URL` (see `lib/api.ts`). Authentication therefore
+ * relies on the bearer token the API returns, with the login cookie kept as a
+ * bonus wherever it is allowed.
+ *
+ * The backend's `CORS_ORIGIN` must list every origin the app is served from:
+ * the Vercel domain for web, `https://localhost` for Android and
+ * `capacitor://localhost` for iOS. See docs/capacitor-adding-plan.md.
  */
 const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
+  output: "export", // static HTML/CSS/JS, for both Vercel and the native shell
+  images: {
+    unoptimized: true, // Required for static exports
+  },
+  // Cache Components implies Partial Prerendering, which a static export
+  // cannot do ("PPR cannot be enabled in export mode"). Both are off now;
+  // they only affect server rendering, which this build no longer has.
+  cacheComponents: false,
+  partialPrefetching: false,
   turbopack: {
     rules: {
       "*.css": {
