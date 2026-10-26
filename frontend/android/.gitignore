@@ -53,9 +53,11 @@ captures/
 .idea/navEditor.xml
 
 # Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# A keystore is a signing credential: never commit one, even the debug one.
+# `app/keystore/debug.keystore` is generated locally by `keytool` (see
+# docs/capacitor-adding-plan.md).
+*.jks
+*.keystore
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

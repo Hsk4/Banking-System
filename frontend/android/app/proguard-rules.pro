@@ -5,6 +5,10 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
+# `proguard-android.txt` is gone in AGP 9; this replaces the `-dontoptimize`
+# it used to contribute, keeping R8 from rewriting Capacitor's bridge classes.
+-dontoptimize
+
 # If your project uses WebView with JS, uncomment the following
 # and specify the fully qualified class name to the JavaScript interface
 # class:

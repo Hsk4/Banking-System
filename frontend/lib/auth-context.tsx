@@ -90,6 +90,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clearUser, router]);
 
   const signOut = useCallback(async () => {
+    // clear locally first: the request below carries the bearer token in its
+    // Authorization header, and clearing afterwards would race that copy
+    clearUser();
     try {
       await logoutRequest();
     } catch (error) {
@@ -98,7 +101,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // token was already invalid - nothing to revoke
       }
     }
-    clearUser();
     toast.success("You are signed out.");
     router.replace("/login");
   }, [clearUser, router]);

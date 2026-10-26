@@ -155,56 +155,61 @@ Two obstacles appeared that step 5 did not predict, both caused by
    export mode”_. Both `cacheComponents` and `partialPrefetching` are now
    `false`; they only affect server rendering, which this build no longer has.
 2. **The edge gate lost its signal.** `proxy.ts` read the `token` cookie, which
-   is no longer set on this origin. Middleware cannot read localStorage, so the
-   gate was replaced by `components/auth-guard.tsx` inside `(app)/layout.tsx`.
-   `proxy()` now passes everything through and the old rule is kept as
-   `legacyProxy()` for reference.
+   is no longer set on this origin; worse, Next.js refuses to start at all with
+   `Middleware cannot be used with "output: export"`. The gate was replaced by
+   `components/auth-guard.tsx` inside `(app)/layout.tsx` and `proxy.ts` was
+   removed.
 
-Verified so far: `next build` succeeds and writes all 7 routes to `out/`;
-`cap add android` and `cap sync android` succeed; `out/` is copied to
-`android/app/src/main/assets/public` with `index.html` and the per-route
-folders present; `tsc --noEmit` exits 0.
+3. **`JSON.parse` was handed HTML.** With `NEXT_PUBLIC_API_URL` unset, `/api/*`
+   hit the static host, which answers with `index.html` **and status 200**. The
+   non-2xx check never fired and the raw body was parsed, producing
+   `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`. Two fixes:
+   the base URL now falls back to the Render URL when the variable is missing,
+   and `parseBody()` in `lib/api.ts` turns any HTML body into an `ApiError`
+   regardless of status.
 
-**Not verified: a compiled APK.** There is no JDK on the build machine
-(`java` is not on PATH, `JAVA_HOME` is unset, and Android Studio's bundled JBR
-is absent). The Android SDK itself is present at `D:\Android sdk` with
-platforms 34–36.1 and build-tools up to 37.0.0. Installing a JDK 21 and
-pointing `JAVA_HOME` at it is a prerequisite for `cap run android`.
+Verified: `next build` succeeds and writes all 7 routes to `out/`; `cap add`
+and `cap sync android` succeed; `out/` is copied to
+`android/app/src/main/assets/public`; `tsc --noEmit` exits 0 in `frontend/`;
+both login failure modes now show a readable message instead of a parse error.
+
+### Toolchain: JDK, Gradle and AGP
+
+- **JDK 25 LTS (Zulu 25.0.5)** is installed at `F:\Java\jdk-25`, with
+  `JAVA_HOME` set machine-wide and `F:\Java\jdk-25\bin` first on PATH. The
+  previous JDK 22 install was removed.
+- **Gradle and AGP had to move.** Gradle 8.14.3 cannot run on Java 25 - support
+  starts at Gradle 9.1 - so the wrapper is **Gradle 9.6.0** and the plugin is
+  **AGP 9.4.0**, which is what 9.6 requires. Both are in `android/`.
+- AGP 9 also removed `proguard-android.txt`, so `app/build.gradle` now uses
+  `proguard-android-optimize.txt` and `proguard-rules.pro` carries
+  `-dontoptimize` to preserve the old behaviour. This was verified by a
+  successful `assembleRelease`.
+- **`cap sync` regenerates Android files.** Re-running `cap add android`
+  restores Gradle 8.14.3 / AGP 8.13.0 and re-breaks the build on JDK 25.
+- The release variant signs with `app/keystore/debug.keystore`, generated
+  locally and **git-ignored**. Replace it with a real `signingConfig` before
+  publishing.
+
+### Building the APK
+
+```bash
+bun run android:apk    # debug APK: android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Set `NEXT_PUBLIC_API_URL` before that build. `bun run build:mobile` reads
+`frontend/.env.local`, so a local value (`http://localhost:3001`) bakes a URL
+the phone cannot reach:
+
+```bash
+NEXT_PUBLIC_API_URL=https://banking-system-r8bq.onrender.com bun run android:apk
+```
 
 ### Remaining operator steps (not code)
 
 - Render `CORS_ORIGIN` must include: the Vercel domain,
   `https://localhost`, `capacitor://localhost`.
 - Vercel build needs `NEXT_PUBLIC_API_URL=https://banking-system-r8bq.onrender.com`.
-- Install a JDK 21 to build/run the Android app.
-
-Option A is implemented. The plan is at docs/capacitor-adding-plan.md, and the Android platform is added and syncing.
-
-The plan document
-It records all four options considered (A: static export, B: separate mobile config, C: embed the backend, D: WebView at the Vercel URL), each with pros/cons and a risk rating — plus the six consequences of choosing A in a table with severity and mitigation, an outcomes/symptoms table, and an implementation log.
-
-What I built
-Change Why
-Deleted app/api/[...path]/route.ts A static export can't contain a server route
-next.config.ts: cacheComponents/partialPrefetching → false They imply PPR, which fails with "PPR cannot be enabled in export mode"
-capacitor.config.ts: webDir → out public/ would have packaged the wrong folder
-lib/api.ts: NEXT_PUBLIC_API_URL base + Authorization: Bearer No server route on device; cookie is third-party there
-auth-context, login, register: pass response.token Wires the fallback; no change when the var is unset
-components/auth-guard.tsx (new) + (app)/layout.tsx proxy.ts read the token cookie, which no longer exists cross-origin — every signed-in page would have bounced to /login
-proxy.ts: proxy() passes through; old rule kept as legacyProxy() Middleware can't read localStorage, so the gate had to move to the client
-.env.example, npm scripts Documents the one var, adds android:run etc.
-Verified
-next build → all 7 routes written to out/
-cap add android + cap sync android → success
-out/ copied to android/app/src/main/assets/public with index.html and per-route folders; capacitor.config.json has webDir: "out"
-tsc --noEmit → exit 0
-Two things I could not verify, and won't claim
-
-1. No APK was built. There is no JDK on this machine — java isn't on PATH, JAVA_HOME is unset, and Android Studio's bundled JBR is missing. Your SDK at D:\Android sdk is otherwise complete (platforms 34–36.1, build-tools to 37.0.0). Install a JDK 21, set JAVA_HOME, and bun run android:run will work.
-
-2. I have not exercised login on a device, so the CORS_ORIGIN outcome is unproven. When you run it, the first failure will be a TypeError: Failed to fetch with no response body — that's the origin rejection, and chrome://inspect will show the exact Origin value to add on Render.
-
-Before you deploy
-Render CORS_ORIGIN must include the Vercel domain, https://localhost, and capacitor://localhost.
-Vercel needs NEXT_PUBLIC_API_URL=https://banking-system-r8bq.onrender.com.
-This is also the point where Option A's main risk lands: your web app now talks to Render cross-origin too, so if CORS_ORIGIN isn't updated, Vercel sign-in breaks on the next deploy. Nothing is committed yet — say the word and I'll commit the frontend + docs.
+- Login has not been exercised on a device, so the CORS outcome is unproven.
+  The first failure will be a fetch rejection with no body; `chrome://inspect`
+  shows the exact `Origin` to add on Render.
