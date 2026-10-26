@@ -25,9 +25,10 @@
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import accountModel from "../models/account.model";
-import ledgerModel from "../models/ledger.model";
 import transactionModel from "../models/transaction.model";
 import emailService from "../services/email.service";
+import { postEntries } from "../services/ledger.service";
+import { getTreasury } from "../services/treasury.service";
 
 /**
  * - Request with the authenticated user attached by `authMiddleware`
@@ -103,6 +104,17 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
   if (!fromUserAccount || !toUserAccount) {
     return res.status(400).json({
       message: "Invalid fromAccount or toAccount",
+    });
+  }
+
+  // a customer transfer may never touch the bank's own accounts: money leaves
+  // the treasury only through the system funding endpoint
+  if (
+    fromUserAccount.type === "SYSTEM" ||
+    toUserAccount.type === "SYSTEM"
+  ) {
+    return res.status(400).json({
+      message: "Transfers cannot involve a system account",
     });
   }
 
@@ -191,6 +203,8 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
           amount,
           idempotencyKey,
           status: "PENDING",
+          kind: "TRANSFER",
+          initiatedBy: req.user._id,
         },
       ],
       { session },
@@ -222,33 +236,10 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
      * TL:DR : Debit means to decrease an asset or increase a liability, while credit means to increase an asset or decrease a liabilityf for a bank and reverse for the customers perspective.
      */
 
-    await ledgerModel.create(
-      [
-        {
-          account: fromAccount,
-          amount: amount,
-          transaction: transaction._id,
-          type: "DEBIT",
-        },
-      ],
-      { session },
-    );
-
-    /**
-     * 7. Create CREDIT ledger entry
-     * Adds the amount to the receiver's account.
-     */
-    await ledgerModel.create(
-      [
-        {
-          account: toAccount,
-          amount: amount,
-          transaction: transaction._id,
-          type: "CREDIT",
-        },
-      ],
-      { session },
-    );
+    await postEntries(session, transaction._id, [
+      { account: fromAccount, amount, type: "DEBIT" },
+      { account: toAccount, amount, type: "CREDIT" },
+    ]);
 
     /**
      * 8. Mark transaction COMPLETED
@@ -302,15 +293,17 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
 
 /**
  * - Create an initial funds transaction
- * Seeds an account with funds by transferring from the calling user's own
- * account. Used to give a freshly created account a starting balance.
+ * Seeds a customer account with funds paid out of the system treasury. The
+ * caller is an administrator, not a payer: the treasury is the bank's own
+ * account and is allowed to run negative by exactly the amount issued.
  *
  * FLOW:
  * 1. Validate request
- * 2. Resolve the destination account
- * 3. Resolve the system (sender) account
- * 4. Create the transaction + both ledger entries inside a session
- * 5. Commit and return the completed transaction
+ * 2. Resolve the destination account (must be an ACTIVE CUSTOMER account)
+ * 3. Validate the idempotency key
+ * 4. Resolve the treasury (sender) account
+ * 5. Create the transaction + both ledger entries inside a session
+ * 6. Commit and return the completed transaction
  *
  * @param req - The request object
  * @param res - The response
@@ -351,22 +344,73 @@ async function createInitialFundsTransaction(
     });
   }
 
-  /**
-   * 3. Resolve the system (sender) account
-   */
-  const fromUserAccount = await accountModel.findOne({
-    users: req.user._id,
-  });
-
-  // if the caller has no account to fund from, return an error
-  if (!fromUserAccount) {
+  // funds may only be issued into a live customer account. Funding the
+  // treasury or another system account would inflate the money supply
+  // against no real balance.
+  if (toUserAccount.type !== "CUSTOMER") {
     return res.status(400).json({
-      message: "System user account not found",
+      message: "Funds can only be added to a customer account",
+    });
+  }
+
+  if (toUserAccount.status !== "ACTIVE") {
+    return res.status(400).json({
+      message: "The destination account must be ACTIVE",
     });
   }
 
   /**
-   * 4. Create the transaction + both ledger entries inside a session
+   * 3. Validate the idempotency key
+   * Without this, a repeated key reached the unique index and surfaced as a
+   * 500. A replay now reports what happened to the first attempt.
+   */
+  const existing = await transactionModel.findOne({ idempotencyKey });
+
+  if (existing) {
+    switch (existing.status) {
+      case "COMPLETED":
+        return res.status(200).json({
+          message: "Transaction already processed",
+          transaction: existing,
+        });
+
+      case "PENDING":
+        // 202 Accepted: the request is still being worked on
+        return res.status(202).json({
+          message: "Transaction is still processing",
+        });
+
+      case "FAILED":
+        return res.status(409).json({
+          message:
+            "Transaction processing failed, please retry with a new idempotencyKey",
+        });
+
+      case "REVERSED":
+        return res.status(409).json({
+          message:
+            "Transaction was reversed, please retry with a new idempotencyKey",
+        });
+    }
+  }
+
+  /**
+   * 4. Resolve the treasury (sender) account
+   */
+  // the treasury may go negative without limit - that balance *is* the total
+  // money the system has issued, so there is deliberately no funds check here
+  let treasury: Awaited<ReturnType<typeof getTreasury>>;
+
+  try {
+    treasury = await getTreasury();
+  } catch {
+    return res.status(500).json({
+      message: "Treasury account is unavailable, please retry",
+    });
+  }
+
+  /**
+   * 5. Create the transaction + both ledger entries inside a session
    */
   let session: mongoose.ClientSession | undefined;
   let transaction: InstanceType<typeof transactionModel> | undefined;
@@ -377,38 +421,21 @@ async function createInitialFundsTransaction(
 
     // the header record for this money movement
     transaction = new transactionModel({
-      fromAccount: fromUserAccount._id,
+      fromAccount: treasury._id,
       toAccount,
       amount,
       idempotencyKey,
       status: "PENDING",
+      kind: "FUNDING",
+      initiatedBy: req.user._id,
     });
 
-    // DEBIT - removes the amount from the system account
-    await ledgerModel.create(
-      [
-        {
-          account: fromUserAccount._id,
-          amount: amount,
-          transaction: transaction._id,
-          type: "DEBIT",
-        },
-      ],
-      { session },
-    );
-
-    // CREDIT - adds the amount to the destination account
-    await ledgerModel.create(
-      [
-        {
-          account: toAccount,
-          amount,
-          transaction: transaction._id,
-          type: "CREDIT",
-        },
-      ],
-      { session },
-    );
+    // DEBIT the treasury, CREDIT the customer: still one of each, so the
+    // ledger stays balanced even though the treasury runs negative
+    await postEntries(session, transaction._id, [
+      { account: treasury._id, amount, type: "DEBIT" },
+      { account: toAccount, amount, type: "CREDIT" },
+    ]);
 
     /**
      * 5. Mark the transaction COMPLETED, persist it, and commit

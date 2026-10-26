@@ -8,8 +8,16 @@ import ledgerModel from "./ledger.model";
  * from the immutable ledger entries so the two can never drift apart.
  */
 export interface IAccount {
-  /** the user(s) that own this account */
+  /** the user(s) that own this account - empty for a SYSTEM account */
   users: mongoose.Types.ObjectId[];
+  /**
+   * who the account belongs to: a customer holds their own money, a SYSTEM
+   * account is owned by the bank (the treasury) and cannot be touched by
+   * customer transfers.
+   */
+  type: "CUSTOMER" | "SYSTEM";
+  /** stable name for a system account, e.g. "TREASURY"; unique when set */
+  code?: string;
   /** lifecycle state of the account - only ACTIVE accounts can transact */
   status: "ACTIVE" | "CLOSED" | "FROZEN";
   /** the currency this account is denominated in */
@@ -44,12 +52,36 @@ const accountSchema = new mongoose.Schema<
   IAccountMethods
 >(
   {
-    // the user(s) that own this account
+    // the user(s) that own this account. A SYSTEM account has no owners, and
+    // Mongoose treats an empty array as a missing value, so `required` has to
+    // be conditional on the type or the treasury could never be saved.
     users: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: "User",
-      required: [true, "At least one user is required"],
+      required: [
+        function (this: IAccount) {
+          return this.type !== "SYSTEM";
+        },
+        "At least one user is required",
+      ],
       index: true,
+    },
+
+    // customer accounts hold a person's money; SYSTEM accounts are the bank's
+    type: {
+      type: String,
+      enum: {
+        values: ["CUSTOMER", "SYSTEM"],
+        message: "Type must be CUSTOMER or SYSTEM",
+      },
+      default: "CUSTOMER",
+      required: [true, "Type is required"],
+    },
+
+    // a stable handle for system accounts; unset for every customer account
+    code: {
+      type: String,
+      trim: true,
     },
     // lifecycle state of the account - only ACTIVE accounts can transact
     status: {
@@ -79,6 +111,18 @@ const accountSchema = new mongoose.Schema<
  * ACTIVE account per owner is enforced in the controller, with a clear 409.
  */
 accountSchema.index({ users: 1, status: 1 });
+
+/**
+ * - One account per code
+ * A partial index, so the many customer accounts with no `code` do not
+ * collide. This is what makes the treasury upsert safe when two instances
+ * start at the same time: the loser of the race hits a duplicate key instead
+ * of creating a second treasury.
+ */
+accountSchema.index(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: "string" } } },
+);
 
 /**
  * - getBalance implementation

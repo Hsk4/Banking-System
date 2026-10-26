@@ -7,9 +7,10 @@ import accountModel from "../models/account.model";
  *
  * FLOW:
  * 1. Read the authenticated user attached by `authMiddleware`
- * 2. Reject with 409 when the user already holds an ACTIVE account
- * 3. Create an ACTIVE account denominated in PKR owned by that user
- * 4. Return the created account
+ * 2. Reject a system user with 403 - an administrator holds no accounts
+ * 3. Reject with 409 when the user already holds an ACTIVE account
+ * 4. Create an ACTIVE customer account denominated in PKR owned by that user
+ * 5. Return the created account
  *
  * @param req - The request object containing the authenticated user information.
  * @param res - The response object used to send back the created account or an error message.
@@ -20,7 +21,16 @@ async function createAccountController(req: Request, res: Response): Promise<voi
   // 1. the user was attached by the auth middleware
   const user = req.user;
 
-  // 2. the UI offers "open account" exactly once - refuse a second one clearly
+  // 2. a system user is a pure administrator with no personal money, so
+  //    opening them a customer account would break that model
+  if (user.systemUser) {
+    res.status(403).json({
+      message: "System users do not hold customer accounts",
+    });
+    return;
+  }
+
+  // 3. the UI offers "open account" exactly once - refuse a second one clearly
   const existingAccount = await accountModel.findOne({
     users: user._id,
     status: "ACTIVE",
@@ -34,14 +44,15 @@ async function createAccountController(req: Request, res: Response): Promise<voi
     return;
   }
 
-  // 3. build the new account - owned by the current user and ACTIVE by default
+  // 4. build the new account - owned by the current user and ACTIVE by default
   const account = new accountModel({
     users: [user._id],
+    type: "CUSTOMER",
     status: "ACTIVE",
     currency: "PKR",
   });
 
-  // 4. persist and return the created account with a 201 Created
+  // 5. persist and return the created account with a 201 Created
   const savedAccount = await account.save();
   res.status(201).json(savedAccount);
 }

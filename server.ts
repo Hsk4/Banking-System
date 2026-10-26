@@ -1,5 +1,6 @@
 import app from "./src/app";
 import connectDB from "./src/config/db";
+import { ensureTreasury } from "./src/services/treasury.service";
 
 /**
  * - Application entry point
@@ -12,6 +13,8 @@ import connectDB from "./src/config/db";
 async function start(): Promise<void> {
   try {
     await connectDB();
+    // the treasury must exist before the first funding request can be served
+    await ensureTreasury();
   } catch (error) {
     // without a database every request would fail - stop instead of starting
     console.error("Could not connect to MongoDB:", error);

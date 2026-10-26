@@ -13,6 +13,14 @@ export interface ITransaction {
   toAccount: mongoose.Types.ObjectId;
   /** lifecycle state of the transaction */
   status: "PENDING" | "COMPLETED" | "FAILED" | "REVERSED";
+  /**
+   * what produced the movement: a customer TRANSFER, or FUNDING issued by an
+   * administrator out of the treasury. Optional so rows written before the
+   * field existed stay valid.
+   */
+  kind?: "TRANSFER" | "FUNDING";
+  /** the user who asked for it (a customer, or the administrator funding) */
+  initiatedBy?: mongoose.Types.ObjectId;
   /** the amount being moved, stated in the account's currency */
   amount: number;
   /** client-supplied key that makes retried requests safe to repeat */
@@ -54,6 +62,23 @@ const transactionSchema = new mongoose.Schema<ITransaction>(
       default: "PENDING",
     },
 
+    // what produced the movement - old rows have no value and default to a
+    // transfer when read
+    kind: {
+      type: String,
+      enum: {
+        values: ["TRANSFER", "FUNDING"],
+        message: "Kind must be TRANSFER or FUNDING",
+      },
+      default: "TRANSFER",
+    },
+
+    // the user who initiated the movement
+    initiatedBy: {
+      ref: "User",
+      type: mongoose.Schema.Types.ObjectId,
+    },
+
     // the amount being moved, stated in the account's currency
     amount: {
       type: Number,
@@ -81,5 +106,12 @@ const transactionSchema = new mongoose.Schema<ITransaction>(
  * The unique index on `idempotencyKey` is the last line of defence against
  * a duplicate transfer slipping through a concurrent request.
  */
+/**
+ * - Recent-first history per kind
+ * Supports the admin history screen: "the newest FUNDING transactions", and
+ * the same for transfers, without scanning the collection.
+ */
+transactionSchema.index({ kind: 1, createdAt: -1 });
+
 const transactionModel = mongoose.model<ITransaction>("Transaction", transactionSchema);
 export default transactionModel;
