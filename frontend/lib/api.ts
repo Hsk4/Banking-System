@@ -47,6 +47,49 @@ export const TRANSFER_TIMEOUT_MS = 45_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 /**
+ * Where the API lives when it is not reachable same-origin.
+ *
+ * On the web this is empty and every call goes to `/api/*`, which the Next
+ * proxy route forwards to the backend - the httpOnly cookie is set on our own
+ * origin that way. A Capacitor build has no server routes (the Android shell
+ * loads a static export), so the app has to talk to the backend directly and
+ * the base URL must be absolute.
+ */
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+
+/** Where the bearer token is kept when cookies cannot cross origins. */
+export const AUTH_TOKEN_KEY = "banking-ui-token";
+
+/**
+ * - Read the stored token
+ * Only used off-origin: there the login cookie belongs to the backend's
+ * domain and is subject to third-party cookie rules, so the token the API
+ * returns is kept and replayed as a bearer header instead.
+ */
+function readToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * - Store or clear the session token
+ * @param token - the token from login/register, or `null` on sign out
+ */
+export function setAuthToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+    else window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    // private mode / storage disabled - cookies still work on the web
+  }
+}
+
+/**
  * - Fetch wrapper, keeping the status
  * Calls the API through the same-origin `/api/*` proxy route (see
  * `app/api/[...path]/route.ts`), so the httpOnly auth cookie is sent
@@ -67,15 +110,23 @@ export async function apiWithStatus<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const headers = new Headers();
+  // Only announce a JSON body when there is one: Express's JSON parser
+  // rejects `Content-Type: application/json` with an empty body, which broke
+  // bodyless POSTs like opening an account and logging out.
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+
+  // Off-origin builds send the token explicitly: the httpOnly cookie is set
+  // on the backend's domain there, where it may be blocked as third-party.
+  const token = API_BASE_URL ? readToken() : null;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(`${API_BASE_URL}/api${path}`, {
       method,
       credentials: "include",
-      // Only announce a JSON body when there is one: Express's JSON parser
-      // rejects `Content-Type: application/json` with an empty body, which
-      // broke bodyless POSTs like opening an account and logging out.
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" }, 
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       // balances change constantly - never serve a cached copy

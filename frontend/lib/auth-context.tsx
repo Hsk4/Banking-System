@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ApiError, logout as logoutRequest } from "./api";
+import { ApiError, logout as logoutRequest, setAuthToken } from "./api";
 import type { User } from "./types";
 
 /**
@@ -24,8 +24,8 @@ const USER_KEY = "banking-ui-user";
 interface AuthContextValue {
   /** the signed-in user, or `null` before hydration / when logged out */
   user: User | null;
-  /** store the user returned by login or register */
-  signIn: (user: User) => void;
+  /** store the user returned by login or register, with its token */
+  signIn: (user: User, token?: string) => void;
   /** revoke the token, clear local state and land on /login */
   signOut: () => Promise<void>;
   /** handle a 401 from anywhere: clear state, toast, redirect */
@@ -58,8 +58,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  const signIn = useCallback((nextUser: User) => {
+  /**
+   * Store the user from login/register.
+   * @param nextUser - the authenticated user
+   * @param token - the API token, kept for builds that cannot use cookies
+   */
+  const signIn = useCallback((nextUser: User, token?: string) => {
     setUser(nextUser);
+    setAuthToken(token ?? null);
     try {
       localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
     } catch {
@@ -69,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearUser = useCallback(() => {
     setUser(null);
+    setAuthToken(null);
     try {
       localStorage.removeItem(USER_KEY);
     } catch {

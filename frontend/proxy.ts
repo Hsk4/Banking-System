@@ -10,14 +10,32 @@ const GUEST_ONLY = ["/login", "/register"];
 /**
  * - Route gate
  * Next.js 16 renamed `middleware.ts` to `proxy.ts` (function `proxy`, Node.js
- * runtime). The JWT secret lives on the backend, so this can only check that
- * the `token` cookie exists - a forged or expired cookie still gets through to
- * the page, but every API call then returns 401 and the app redirects there.
+ * runtime). The JWT secret lives on the backend, so this cannot verify a
+ * session - it can only tell whether one is likely to exist.
+ *
+ * The API now lives on another origin, so its login cookie is not visible
+ * here. Middleware cannot read localStorage either, which leaves one honest
+ * option: do not gate at the edge at all. The app already handles the real
+ * check - the first API call answers 401 and `handleUnauthorized` sends the
+ * user to /login - and a static export has no server to protect.
+ *
+ * @param request - the incoming request
+ * @returns the request, unchanged
+ */
+export function proxy(request: NextRequest) {
+  return NextResponse.next();
+}
+
+/**
+ * - Unused former gate
+ * Kept as documentation of the rule the client-side guard now implements, in
+ * case a same-origin API is restored (see docs/capacitor-adding-plan.md,
+ * Option B). Remove once that decision is final.
  *
  * @param request - the incoming request
  * @returns a redirect for the auth pages, otherwise the request continues
  */
-export function proxy(request: NextRequest) {
+export function legacyProxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasToken = request.cookies.has("token");
 
