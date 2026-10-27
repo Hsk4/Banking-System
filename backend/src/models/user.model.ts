@@ -19,6 +19,18 @@ export interface IUser {
 
   /** whether this user is a system user (not a real person) */
   systemUser: boolean;
+
+  /**
+   * bumped by "sign out everywhere". Every token carries the value it was
+   * issued with, so bumping this retires all of them at once - including
+   * sessions on devices the owner no longer has.
+   */
+  tokenVersion: number;
+
+  /** last successful sign-in, used for the "new device" alert */
+  lastLoginAt?: Date | null;
+  /** the device that signed in last, compared against the next one */
+  lastLoginDevice?: string | null;
 }
 
 /**
@@ -71,6 +83,23 @@ const userSchema = new mongoose.Schema<IUser, {}, IUserMethods>(
       type: Boolean,
       default: false,
       immutable: true,
+    },
+
+    // bumped by "sign out everywhere" to retire every issued token
+    tokenVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // last successful sign-in, and from which device
+    lastLoginAt: {
+      type: Date,
+      default: null,
+    },
+    lastLoginDevice: {
+      type: String,
+      default: null,
     },
   },
 

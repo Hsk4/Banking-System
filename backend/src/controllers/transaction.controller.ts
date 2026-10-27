@@ -5,16 +5,19 @@
  *
  * THE 10-STEP TRANSFER FLOW:
  * 1. Validate request (required fields, positive amount, distinct accounts)
- * 2. Validate idempotency key (replay an earlier result if one exists)
- * 3. Check account status (both accounts must be ACTIVE and the caller must
+ * 2. Apply the transfer and daily caps (see `config/limits.ts`)
+ * 3. Validate idempotency key, scoped to the sending account
+ * 4. Check account status (both accounts must be ACTIVE and the caller must
  *    own the source account)
- * 4. Derive sender balance from ledger (inside the session)
- * 5. Create transaction (PENDING)
- * 6. Create DEBIT ledger entry
- * 7. Create CREDIT ledger entry
- * 8. Mark transaction COMPLETED
+ * 5. Derive sender balance from ledger (inside the session)
+ * 6. Create transaction (PENDING)
+ * 7. Create DEBIT and CREDIT ledger entries
+ * 8. Mark transaction COMPLETED, or hold it for an emailed code
  * 9. Commit MongoDB session
  * 10. Send email notification
+ *
+ * A destination may be given as the recipient's short account number instead
+ * of the internal id - that is what the UI collects.
  *
  * @param req - The request object
  * @param res - The response
@@ -24,11 +27,23 @@
 
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
+import LIMITS, { DAILY_WINDOW_MS } from "../config/limits";
 import accountModel from "../models/account.model";
 import transactionModel from "../models/transaction.model";
 import emailService from "../services/email.service";
 import { postEntries } from "../services/ledger.service";
 import { getTreasury } from "../services/treasury.service";
+import {
+  normaliseAccountNumber,
+  formatAccountNumber,
+} from "../services/accountNumber.service";
+import {
+  issueCode,
+  redeemCode,
+  referenceFor,
+} from "../services/verification.service";
+import { listAccountHistory } from "../services/history.service";
+import { record as recordAudit } from "../services/audit.service";
 
 /**
  * - Request with the authenticated user attached by `authMiddleware`
@@ -38,17 +53,31 @@ type AuthenticatedRequest = Request & {
 };
 
 /**
- * - Resolve an account by id
- * @param accountId - the account id supplied by the caller
- * @returns the account document, or `null` when the id is invalid/unknown
+ * - Resolve an account from whatever the caller supplied
+ * Accepts the internal id (what the app used to send, kept so old clients and
+ * the admin page still work) or the short account number a person types.
+ *
+ * @param value - an account id or a 8-digit account number
+ * @returns the account document, or `null` when nothing matches
  */
-async function findAccount(accountId: string) {
-  // a malformed id would otherwise throw a CastError
-  if (!mongoose.isValidObjectId(accountId)) {
-    return null;
+async function findAccountByReference(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+
+  const trimmed = value.trim();
+
+  // the legacy path: an internal id
+  if (mongoose.isValidObjectId(trimmed)) {
+    return accountModel.findById(trimmed);
   }
-  return accountModel.findById(accountId);
+
+  // the human path: the short number, spaces and dashes allowed
+  const accountNumber = normaliseAccountNumber(trimmed);
+  if (!accountNumber) return null;
+
+  return accountModel.findOne({ accountNumber });
 }
+
+
 
 /**
  * - Stop a started session
@@ -103,11 +132,83 @@ function logTransactionFailure(step: string, error: unknown): void {
   });
 }
 
+/**
+ * - Total sent from an account in the last 24 hours
+ * Completed transfers only: a held or failed one never moved money, so it
+ * must not count towards the daily cap.
+ *
+ * @param accountId - the sending account
+ * @param session - optional session, so the figure is read with the transfer
+ * @returns the total, in the account's currency
+ */
+export async function sentInLastDay(
+  accountId: mongoose.Types.ObjectId,
+  session?: mongoose.ClientSession,
+): Promise<number> {
+  const since = new Date(Date.now() - DAILY_WINDOW_MS);
+
+  const rows = await transactionModel
+    .aggregate<{ total: number }>([
+      {
+        $match: {
+          fromAccount: accountId,
+          status: { $in: ["COMPLETED", "PENDING"] },
+          createdAt: { $gte: since },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ])
+    .session(session ?? null);
+
+  return Math.round((rows[0]?.total ?? 0) * 100) / 100;
+}
+
+/**
+ * - Reply for a replayed idempotency key
+ * One place for the four statuses, so the normal transfer and the released
+ * hold answer the same way.
+ *
+ * @param transaction - the existing transaction
+ * @param res - the response to fill
+ */
+function replayTransaction(
+  transaction: InstanceType<typeof transactionModel>,
+  res: Response,
+) {
+  switch (transaction.status) {
+    case "COMPLETED":
+      return res.status(200).json({
+        message: "Transaction already processed",
+        transaction,
+      });
+
+    case "PENDING":
+      // 202 Accepted: the request is still being worked on
+      return res.status(202).json({
+        message: "Transaction is still processing",
+        transaction,
+      });
+
+    case "FAILED":
+      return res.status(409).json({
+        message:
+          "Transaction processing failed, please retry with a new idempotencyKey",
+      });
+
+    case "REVERSED":
+      return res.status(409).json({
+        message:
+          "Transaction was reversed, please retry with a new idempotencyKey",
+      });
+  }
+}
+
 async function createTransaction(req: AuthenticatedRequest, res: Response) {
   /**
-   * 1. Validate reques t
+   * 1. Validate request
    */
-  const { fromAccount, toAccount, amount, idempotencyKey } = req.body ?? {};
+  const { fromAccount, toAccount, amount, idempotencyKey, note } =
+    req.body ?? {};
 
   // if any of the required fields are missing, return an error
   if (!fromAccount || !toAccount || !amount || !idempotencyKey) {
@@ -123,17 +224,24 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
     });
   }
 
-  // an account cannot send money to itself
-  if (fromAccount === toAccount) {
+  // money is held to the cent; anything finer is a client bug, not a payment
+  if (Math.round(amount * 100) !== amount * 100) {
     return res.status(400).json({
-      message: "fromAccount and toAccount must be different",
+      message: "amount may have at most two decimal places",
     });
   }
 
-  const fromUserAccount = await findAccount(fromAccount);
+  // an optional note, shown in the history of both sides
+  if (note !== undefined && note !== null) {
+    if (typeof note !== "string" || note.trim().length > 140) {
+      return res.status(400).json({
+        message: "note must be a string of 140 characters or fewer",
+      });
+    }
+  }
 
-  // look up the receiver's account
-  const toUserAccount = await findAccount(toAccount);
+  const fromUserAccount = await findAccountByReference(fromAccount);
+  const toUserAccount = await findAccountByReference(toAccount);
 
   // if the fromAccount or toAccount does not exist, return an error
   if (!fromUserAccount || !toUserAccount) {
@@ -142,55 +250,57 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
     });
   }
 
+  // an account cannot send money to itself
+  if (fromUserAccount._id.equals(toUserAccount._id)) {
+    return res.status(400).json({
+      message: "fromAccount and toAccount must be different",
+    });
+  }
+
   // a customer transfer may never touch the bank's own accounts: money leaves
   // the treasury only through the system funding endpoint
-  if (
-    fromUserAccount.type === "SYSTEM" ||
-    toUserAccount.type === "SYSTEM"
-  ) {
+  if (fromUserAccount.type === "SYSTEM" || toUserAccount.type === "SYSTEM") {
     return res.status(400).json({
       message: "Transfers cannot involve a system account",
     });
   }
 
   /**
-   * 2. Validate idempotency key
+   * 2. Transfer and daily caps
+   * Checked before any write, so a refused amount never creates a header row.
    */
+  if (amount > LIMITS.perTransfer) {
+    return res.status(400).json({
+      message: `A single transfer cannot exceed PKR ${LIMITS.perTransfer.toLocaleString("en-PK")}`,
+    });
+  }
 
-  // check if a transaction with the same idempotency key already exists
-  const isTransactionAlreadyExists = await transactionModel.findOne({
-    idempotencyKey: idempotencyKey,
-  });
-
-  // if a transaction with the same idempotency key already exists, return the status of that transaction
-  if (isTransactionAlreadyExists) {
-    switch (isTransactionAlreadyExists.status) {
-      case "COMPLETED":
-        return res.status(200).json({
-          message: "Transaction already processed",
-          transaction: isTransactionAlreadyExists,
-        });
-
-      case "PENDING":
-        // 202 Accepted: the request is still being worked on
-        return res.status(202).json({
-          message: "Transaction is still processing",
-        });
-
-      case "FAILED":
-        return res.status(409).json({
-          message: "Transaction processing failed, please retry with a new idempotencyKey",
-        });
-
-      case "REVERSED":
-        return res.status(409).json({
-          message: "Transaction was reversed, please retry with a new idempotencyKey",
-        });
-    }
+  const alreadySent = await sentInLastDay(fromUserAccount._id);
+  if (
+    Math.round((alreadySent + amount) * 100) >
+    Math.round(LIMITS.dailyPerAccount * 100)
+  ) {
+    const remaining = Math.max(0, LIMITS.dailyPerAccount - alreadySent);
+    return res.status(400).json({
+      message: `This would pass your daily limit. You can still send PKR ${remaining.toLocaleString("en-PK")} today.`,
+    });
   }
 
   /**
-   * 3. Check account status and ownership
+   * 3. Validate idempotency key
+   */
+  const isTransactionAlreadyExists = await transactionModel.findOne({
+    idempotencyKey,
+    fromAccount: fromUserAccount._id,
+  });
+
+  // if a transaction with the same key already exists, report what became of it
+  if (isTransactionAlreadyExists) {
+    return replayTransaction(isTransactionAlreadyExists, res);
+  }
+
+  /**
+   * 4. Check account status and ownership
    */
 
   // only the owner of the source account may move money out of it
@@ -200,90 +310,96 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
     });
   }
 
-  // if either the fromAccount or toAccount is not ACTIVE, return an error
+  // if either the fromAccount or toAccount is not ACTIVE, return an error.
+  // FROZEN and CLOSED are refused on both sides: money must not leave a
+  // blocked account, and must not arrive in one that cannot be operated.
   if (
     fromUserAccount.status !== "ACTIVE" ||
     toUserAccount.status !== "ACTIVE"
   ) {
+    const blocked = [
+      fromUserAccount.status !== "ACTIVE" ? "fromAccount" : null,
+      toUserAccount.status !== "ACTIVE" ? "toAccount" : null,
+    ].filter(Boolean);
     return res.status(400).json({
-      message:
-        "Both fromAccount and toAccount must be ACTIVE to process transaction",
+      message: `${blocked.join(" and ")} must be ACTIVE to process transaction`,
     });
   }
 
+  /** The fee is part of the record; today it is always zero. */
+  const fee = 0;
+
   /**
-   * 4. Derive sender balance from ledger
-   * (runs inside the session below; see step 4 there)
+   * 5-9. Create the transaction and both entries inside one session
    */
-
-  // 5. Create transaction (PENDING)
   let transaction: InstanceType<typeof transactionModel> | undefined;
-
-  // 6. Create DEBIT ledger entry
   let session: mongoose.ClientSession | undefined;
+  let holdExpiresAt: Date | null = null;
+
   try {
-    /**
-     * 5. Create transaction (PENDING)
-     * Everything from here on runs inside one MongoDB session, so if any
-     * write fails the whole block is rolled back by the server.
-     */
     session = await mongoose.startSession();
     session.startTransaction();
 
-    const [createdTransaction] = await transactionModel.create(
-      [
-        {
-          fromAccount,
-          toAccount,
-          amount,
-          idempotencyKey,
-          status: "PENDING",
-          kind: "TRANSFER",
-          initiatedBy: req.user._id,
-        },
-      ],
-      { session },
-    );
-    transaction = createdTransaction;
-    if (!transaction) {
-      throw new Error("Transaction was not created");
-    }
+    transaction = new transactionModel({
+      fromAccount: fromUserAccount._id,
+      toAccount: toUserAccount._id,
+      amount,
+      // only the stated amount moves: the fee is recorded, not charged
+      fee,
+      note: typeof note === "string" && note.trim() ? note.trim() : undefined,
+      idempotencyKey,
+      status: "PENDING",
+      kind: "TRANSFER",
+      initiatedBy: req.user._id,
+    });
+    // the reference is derived from the id, so it is set after construction
+    transaction.reference = referenceFor(transaction._id);
 
     /**
-     * 4. Derive sender balance from ledger (inside the session)
+     * 5. Derive sender balance from ledger (inside the session)
      * Read here, not before starting the session, so the check and the
      * debit are evaluated against the same committed ledger state.
      */
     const balance = await fromUserAccount.getBalance();
     if (balance < amount) {
-      return res.status(400).json({
-        message: `Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`,
-      });
+      // thrown, not returned: the catch aborts and the finally releases the
+      // session, so it is never ended twice
+      const insufficient = new Error(
+        `Insufficient balance. Current balance is ${balance}. Requested amount is ${amount}`,
+      );
+      insufficient.name = "INSUFFICIENT_BALANCE";
+      throw insufficient;
     }
 
     /**
-     * 6. Create DEBIT ledger entry
-     * Removes the amount from the sender's account.
-     * why debit though? Because the sender's account is losing money, so it is a debit. The receiver's account is gaining money, so it is a credit.
-     * In accounting terms, a debit is an entry that increases an asset or expense account, or decreases a liability or equity account. A credit is an entry that increases a liability or equity account, or decreases an asset or expense account.
-     * Confusing, right? since we just made debit as deducting the amount fron the sender and credit as adding the amount to the receiver. But we are considering this entry as a business entity for it's customer so the sender is losing money so it is a debit and the receiver is gaining money so it is a credit. We are viewing it from banks view and for a bank Your account balance is money the bank owes you, so it’s a liability for the bank. For liabilities, a credit increases and a debit decreases. So when money leaves your account, the bank debits your account (the liability shrinks), and when money arrives, it credits it (the liability grows). The same balance is an asset (cash you hold). Your bank statement would show a withdrawal as a decrease, but in your own books you’d credit cash when you spend it.
-     *
-     * TL:DR : Debit means to decrease an asset or increase a liability, while credit means to increase an asset or decrease a liabilityf for a bank and reverse for the customers perspective.
+     * 7. Create DEBIT and CREDIT ledger entries - unless this one is held
+     * A transfer above the step-up threshold moves nothing yet: the header is
+     * stored on hold and the money is posted only when the emailed code is
+     * confirmed. That way an abandoned transfer can never debit anyone.
      */
+    const needsCode = amount > LIMITS.stepUpThreshold;
 
-    await postEntries(session, transaction._id, [
-      { account: fromAccount, amount, type: "DEBIT" },
-      { account: toAccount, amount, type: "CREDIT" },
-    ]);
+    if (!needsCode) {
+      await postEntries(session, transaction._id, [
+        { account: fromUserAccount._id, amount, type: "DEBIT" },
+        { account: toUserAccount._id, amount, type: "CREDIT" },
+      ]);
+    }
 
     /**
-     * 8. Mark transaction COMPLETED
+     * 8. Mark the transaction COMPLETED, or hold it for the code
      */
-    await transactionModel.findOneAndUpdate(
-      { _id: transaction._id },
-      { status: "COMPLETED" },
-      { session },
-    );
+    if (needsCode) {
+      holdExpiresAt = new Date(
+        Date.now() + LIMITS.stepUpCodeTtlMinutes * 60 * 1000,
+      );
+      transaction.holdExpiresAt = holdExpiresAt;
+      transaction.status = "PENDING";
+    } else {
+      transaction.status = "COMPLETED";
+    }
+
+    await transaction.save({ session });
 
     /**
      * 9. Commit MongoDB session
@@ -291,6 +407,12 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
      */
     await session.commitTransaction();
   } catch (error) {
+    if (error instanceof Error && error.name === "INSUFFICIENT_BALANCE") {
+      // expected, not a fault: answer plainly instead of logging a failure
+      if (session) await abortSession(session);
+      return res.status(400).json({ message: error.message });
+    }
+
     logTransactionFailure("transfer", error);
     // the session was not committed, so nothing was actually transferred
     if (session) {
@@ -307,6 +429,48 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
   }
 
   /**
+   * - Large transfer: email the code and ask for it
+   * 202 tells the client the transfer is accepted but not settled, which is
+   * exactly true while the hold stands.
+   */
+  if (holdExpiresAt) {
+    try {
+      const expiresAt = await issueCode({
+        userId: req.user._id,
+        accountId: fromUserAccount._id,
+        amount,
+        email: req.user.email,
+        name: req.user.name,
+        amountLabel: `PKR ${amount.toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`,
+      });
+      holdExpiresAt = expiresAt.expiresAt;
+    } catch (error) {
+      // the transfer is held, so nothing has moved yet; release it instead of
+      // leaving a row nobody can ever confirm
+      await transactionModel.findOneAndUpdate(
+        { _id: transaction?._id },
+        { status: "FAILED", holdExpiresAt: null },
+      );
+      logTransactionFailure("step-up", error);
+      return res.status(500).json({
+        message:
+          "This transfer needs a confirmation code, but the code could not be sent. Please retry with a new idempotencyKey.",
+      });
+    }
+
+    return res.status(202).json({
+      message:
+        "This is a large transfer. A confirmation code was sent to your email; enter it to complete the transfer.",
+      requiresCode: true,
+      holdExpiresAt,
+      transaction,
+    });
+  }
+
+  /**
    * 10. Send email notification
    * A mail failure must not turn a committed transfer into an error response.
    */
@@ -315,7 +479,9 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
       req.user.email,
       req.user.name,
       amount,
-      toAccount,
+      toUserAccount.accountNumber
+        ? formatAccountNumber(toUserAccount.accountNumber)
+        : toUserAccount._id.toString(),
     );
   } catch {
     // the money has already moved - log and continue
@@ -328,7 +494,7 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
 }
 
 /**
- * - Create an initial funds transaction
+ * - Add funds from the treasury
  * Seeds a customer account with funds paid out of the system treasury. The
  * caller is an administrator, not a payer: the treasury is the bank's own
  * account and is allowed to run negative by exactly the amount issued.
@@ -339,7 +505,7 @@ async function createTransaction(req: AuthenticatedRequest, res: Response) {
  * 3. Validate the idempotency key
  * 4. Resolve the treasury (sender) account
  * 5. Create the transaction + both ledger entries inside a session
- * 6. Commit and return the completed transaction
+ * 6. Commit, audit the funding, and return the completed transaction
  *
  * @param req - The request object
  * @param res - The response
@@ -371,7 +537,7 @@ async function createInitialFundsTransaction(
   /**
    * 2. Resolve the destination account
    */
-  const toUserAccount = await findAccount(toAccount);
+  const toUserAccount = await findAccountByReference(toAccount);
 
   // if the toAccount does not exist, return an error
   if (!toUserAccount) {
@@ -389,6 +555,8 @@ async function createInitialFundsTransaction(
     });
   }
 
+  // a closed or frozen account cannot transact, so funding it would only
+  // create money nobody can use
   if (toUserAccount.status !== "ACTIVE") {
     return res.status(400).json({
       message: "The destination account must be ACTIVE",
@@ -403,31 +571,7 @@ async function createInitialFundsTransaction(
   const existing = await transactionModel.findOne({ idempotencyKey });
 
   if (existing) {
-    switch (existing.status) {
-      case "COMPLETED":
-        return res.status(200).json({
-          message: "Transaction already processed",
-          transaction: existing,
-        });
-
-      case "PENDING":
-        // 202 Accepted: the request is still being worked on
-        return res.status(202).json({
-          message: "Transaction is still processing",
-        });
-
-      case "FAILED":
-        return res.status(409).json({
-          message:
-            "Transaction processing failed, please retry with a new idempotencyKey",
-        });
-
-      case "REVERSED":
-        return res.status(409).json({
-          message:
-            "Transaction was reversed, please retry with a new idempotencyKey",
-        });
-    }
+    return replayTransaction(existing, res);
   }
 
   /**
@@ -458,19 +602,21 @@ async function createInitialFundsTransaction(
     // the header record for this money movement
     transaction = new transactionModel({
       fromAccount: treasury._id,
-      toAccount,
+      toAccount: toUserAccount._id,
       amount,
+      fee: 0,
       idempotencyKey,
       status: "PENDING",
       kind: "FUNDING",
       initiatedBy: req.user._id,
     });
+    transaction.reference = referenceFor(transaction._id);
 
     // DEBIT the treasury, CREDIT the customer: still one of each, so the
     // ledger stays balanced even though the treasury runs negative
     await postEntries(session, transaction._id, [
       { account: treasury._id, amount, type: "DEBIT" },
-      { account: toAccount, amount, type: "CREDIT" },
+      { account: toUserAccount._id, amount, type: "CREDIT" },
     ]);
 
     /**
@@ -490,13 +636,31 @@ async function createInitialFundsTransaction(
       await abortSession(session);
     }
     return res.status(500).json({
-      message: "Initial funds transaction failed and was rolled back, please retry",
+      message:
+        "Initial funds transaction failed and was rolled back, please retry",
     });
   } finally {
     // release the server-side session now that everything is written
     if (session) {
       await session.endSession();
     }
+  }
+
+  // record the privileged action; see the audit controller for the read side
+  if (transaction) {
+    await recordAudit(req.user, {
+      action: "FUNDS_ISSUED",
+      targetType: "ACCOUNT",
+      targetId: toUserAccount._id,
+      summary: `Issued PKR ${amount.toLocaleString("en-PK")} to account ${
+        toUserAccount.accountNumber ?? toUserAccount._id.toString()
+      }`,
+      detail: {
+        amount,
+        transactionId: transaction._id.toString(),
+        accountNumber: toUserAccount.accountNumber ?? null,
+      },
+    });
   }
 
   return res.status(201).json({
@@ -506,12 +670,379 @@ async function createInitialFundsTransaction(
 }
 
 /**
+ * - Account history
+ * One page of an account's ledger, newest first, with the balance after each
+ * entry. Cursor-paged, so a transfer landing mid-scroll never shifts rows.
+ *
+ * FLOW:
+ * 1. Read the account id and the page options
+ * 2. Reject a page that is not the caller's account
+ * 3. Read one page from the history service and return it
+ *
+ * @param req - The request object
+ * @param res - The response
+ * @GET - /api/transactions/history/:accountId
+ */
+async function getAccountHistory(req: Request, res: Response): Promise<void> {
+  // 1. the account, the page size, the cursor, and the two filters
+  const { accountId } = req.params;
+  const { cursor, limit, direction, from, to } = req.query;
+
+  if (typeof accountId !== "string" || !mongoose.isValidObjectId(accountId)) {
+    res.status(400).json({ message: "Invalid account id" });
+    return;
+  }
+
+  // 2. another customer's account is a 404, not a 403: it does not exist for them
+  const account = await accountModel.findOne({
+    _id: accountId,
+    users: req.user._id,
+  });
+
+  if (!account) {
+    res.status(404).json({ message: "Account not found" });
+    return;
+  }
+
+  // the page size is bounded so one call cannot ask for everything
+  const requested = Number(limit);
+  const pageSize =
+    Number.isFinite(requested) && requested > 0
+      ? Math.min(Math.floor(requested), 100)
+      : 25;
+
+  const directionValue =
+    direction === "in" || direction === "out" ? direction : "all";
+
+  const parseDay = (value: unknown, endOfDay: boolean): Date | null => {
+    if (typeof value !== "string" || !value) return null;
+    // a bare date ("2026-03-01") is accepted as the start of that day
+    const date = new Date(
+      /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value,
+    );
+    if (Number.isNaN(date.getTime())) return null;
+    if (endOfDay) date.setUTCHours(23, 59, 59, 999);
+    return date;
+  };
+
+  // 3. read the page
+  const page = await listAccountHistory({
+    accountId: account._id,
+    limit: pageSize,
+    cursor: typeof cursor === "string" && cursor ? cursor : null,
+    direction: directionValue,
+    from: parseDay(from, false),
+    to: parseDay(to, true),
+  });
+
+  res.status(200).json({
+    account: {
+      _id: account._id,
+      accountNumber: account.accountNumber ?? null,
+      label: account.label ?? null,
+      currency: account.currency,
+      status: account.status,
+    },
+    ...page,
+  });
+}
+
+/**
+ * - One transaction, as a receipt
+ * Scoped to the caller: a transaction is readable only by the owner of one of
+ * its two accounts, or by an administrator.
+ *
+ * @param req - The request object
+ * @param res - The response
+ * @GET - /api/transactions/:transactionId
+ */
+async function getTransaction(req: Request, res: Response): Promise<void> {
+  const { transactionId } = req.params;
+
+  if (!transactionId || !mongoose.isValidObjectId(transactionId)) {
+    res.status(400).json({ message: "Invalid transaction id" });
+    return;
+  }
+
+  const transaction = await transactionModel.findById(transactionId).lean();
+
+  if (!transaction) {
+    res.status(404).json({ message: "Transaction not found" });
+    return;
+  }
+
+  const ownAccounts = await accountModel
+    .find({
+      _id: { $in: [transaction.fromAccount, transaction.toAccount] },
+      users: req.user._id,
+    })
+    .select("_id accountNumber label")
+    .lean();
+
+  if (ownAccounts.length === 0 && !req.user.systemUser) {
+    res.status(404).json({ message: "Transaction not found" });
+    return;
+  }
+
+  const [from, to] = await Promise.all([
+    accountModel.findById(transaction.fromAccount).lean(),
+    accountModel.findById(transaction.toAccount).lean(),
+  ]);
+
+  res.status(200).json({
+    transaction: {
+      ...transaction,
+      reference: transaction.reference ?? referenceFor(transaction._id),
+      fromAccountInfo: from
+        ? {
+            accountNumber: from.accountNumber ?? null,
+            label: from.label ?? null,
+            status: from.status,
+            type: from.type,
+          }
+        : null,
+      toAccountInfo: to
+        ? {
+            accountNumber: to.accountNumber ?? null,
+            label: to.label ?? null,
+            status: to.status,
+            type: to.type,
+          }
+        : null,
+      isMine: ownAccounts.length > 0,
+    },
+  });
+}
+
+/**
+ * - Confirmation code for a held transfer
+ * A transfer above the step-up threshold is held until the owner enters the
+ * code emailed to them here.
+ *
+ * FLOW:
+ * 1. Validate the request
+ * 2. Resolve the held transaction and check the caller owns the source
+ * 3. Refuse an expired hold, and mark it PENDING for support to see
+ * 4. Check the code, then release the hold
+ *
+ * @param req - The request object
+ * @param res - The response
+ * @POST - /api/transactions/:transactionId/confirm
+ */
+async function confirmTransaction(req: Request, res: Response): Promise<void> {
+  const { transactionId } = req.params;
+  const { code } = req.body ?? {};
+
+  // 1. both fields are needed
+  if (!transactionId || !mongoose.isValidObjectId(transactionId)) {
+    res.status(400).json({ message: "Invalid transaction id" });
+    return;
+  }
+  if (typeof code !== "string" || !/^\d{6}$/.test(code.trim())) {
+    res.status(400).json({ message: "Enter the 6-digit code from your email" });
+    return;
+  }
+
+  // 2. the transfer, and the account it leaves from
+  const transaction = await transactionModel.findById(transactionId);
+  if (!transaction) {
+    res.status(404).json({ message: "Transaction not found" });
+    return;
+  }
+
+  const fromAccount = await accountModel.findById(transaction.fromAccount);
+  if (
+    !fromAccount ||
+    !fromAccount.users.some((owner) => owner.equals(req.user._id))
+  ) {
+    res.status(404).json({ message: "Transaction not found" });
+    return;
+  }
+
+  if (transaction.status === "COMPLETED") {
+    res.status(200).json({
+      message: "Transaction already processed",
+      transaction,
+    });
+    return;
+  }
+
+  // 3. a hold that has expired needs a brand new transfer
+  if (!transaction.holdExpiresAt) {
+    res.status(409).json({
+      message:
+        "This transfer is no longer waiting for a code, please start it again",
+    });
+    return;
+  }
+
+  if (transaction.holdExpiresAt.getTime() <= Date.now()) {
+    transaction.status = "PENDING";
+    transaction.holdExpiresAt = null;
+    await transaction.save();
+    res.status(409).json({
+      message: "The confirmation code expired. Please start the transfer again",
+    });
+    return;
+  }
+
+  // 4. the code is checked against the account it was issued for
+  const result = await redeemCode({
+    accountId: fromAccount._id,
+    amount: transaction.amount,
+    code,
+  });
+
+  if (!result.ok) {
+    const messages: Record<string, string> = {
+      NO_CODE:
+        "There is no code waiting for this transfer. Please start it again",
+      EXPIRED: "The confirmation code expired. Please start the transfer again",
+      BAD_CODE: "That code is not correct. Check the email and try again",
+      TOO_MANY_ATTEMPTS:
+        "Too many wrong codes. Please start the transfer again for a new code",
+      ALREADY_USED: "That code has already been used",
+    };
+    res.status(400).json({ message: messages[result.reason] });
+    return;
+  }
+
+  /**
+   * - Post the money, finally
+   * A held transfer wrote no ledger entries, so this is the moment it moves.
+   * The balance is re-read first: the money must still be there, and a
+   * customer who spent it while a code was in their inbox must not push the
+   * account negative.
+   */
+  const balance = await fromAccount.getBalance();
+  if (balance < transaction.amount) {
+    transaction.status = "FAILED";
+    transaction.holdExpiresAt = null;
+    await transaction.save();
+    res.status(400).json({
+      message: `Insufficient balance to complete this transfer. Current balance is ${balance}.`,
+    });
+    return;
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    await postEntries(session, transaction._id, [
+      { account: transaction.fromAccount, amount: transaction.amount, type: "DEBIT" },
+      { account: transaction.toAccount, amount: transaction.amount, type: "CREDIT" },
+    ]);
+    transaction.status = "COMPLETED";
+    transaction.holdExpiresAt = null;
+    await transaction.save({ session });
+    await session.commitTransaction();
+  } catch (error) {
+    logTransactionFailure("confirm", error);
+    await abortSession(session);
+    res.status(500).json({
+      message: "Could not complete the transfer, please try again",
+    });
+    return;
+  } finally {
+    await session.endSession();
+  }
+
+  // the money is only now settled, so this is the point to notify the payer
+  try {
+    await emailService.sendTransactionEmail(
+      req.user.email,
+      req.user.name,
+      transaction.amount,
+      transaction.toAccount.toString(),
+    );
+  } catch {
+    // the money has already moved - a mail failure must not fail the confirm
+  }
+
+  res.status(200).json({
+    message: "Transaction completed successfully",
+    transaction,
+  });
+}
+
+/**
+ * - The limits the UI should show
+ * Quoted straight from the config, so the form never displays a number the
+ * controller will not honour.
+ *
+ * @param req - The request object (the user is not needed, but kept for symmetry)
+ * @param res - The response
+ * @GET - /api/transactions/limits
+ */
+async function getLimits(_req: Request, res: Response): Promise<void> {
+  res.status(200).json({
+    currency: "PKR",
+    perTransfer: LIMITS.perTransfer,
+    dailyPerAccount: LIMITS.dailyPerAccount,
+    stepUpThreshold: LIMITS.stepUpThreshold,
+    stepUpCodeTtlMinutes: LIMITS.stepUpCodeTtlMinutes,
+  });
+}
+
+/**
+ * - How much of the daily limit is left
+ * @param req - The request object
+ * @param res - The response
+ * @GET - /api/transactions/limits/:accountId
+ */
+async function getAccountLimit(req: Request, res: Response): Promise<void> {
+  const { accountId } = req.params;
+
+  if (!accountId || !mongoose.isValidObjectId(accountId)) {
+    res.status(400).json({ message: "Invalid account id" });
+    return;
+  }
+
+  const account = await accountModel.findOne({
+    _id: accountId,
+    users: req.user._id,
+  });
+
+  if (!account) {
+    res.status(404).json({ message: "Account not found" });
+    return;
+  }
+
+  const sentToday = await sentInLastDay(account._id);
+
+  res.status(200).json({
+    accountId: account._id,
+    perTransfer: LIMITS.perTransfer,
+    dailyPerAccount: LIMITS.dailyPerAccount,
+    sentToday,
+    remainingToday: Math.max(
+      0,
+      Math.round((LIMITS.dailyPerAccount - sentToday) * 100) / 100,
+    ),
+    stepUpThreshold: LIMITS.stepUpThreshold,
+  });
+}
+
+/**
  * - Transaction controller
  * Public surface of the transaction module, wired up by {@link transactionRoutes}.
  */
-export { createTransaction, createInitialFundsTransaction };
+export {
+  createTransaction,
+  createInitialFundsTransaction,
+  getAccountHistory,
+  getTransaction,
+  confirmTransaction,
+  getLimits,
+  getAccountLimit,
+};
 
 export default {
   createTransaction,
   createInitialFundsTransaction,
+  getAccountHistory,
+  getTransaction,
+  confirmTransaction,
+  getLimits,
+  getAccountLimit,
 };

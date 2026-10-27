@@ -18,6 +18,19 @@ export interface IAccount {
   type: "CUSTOMER" | "SYSTEM";
   /** stable name for a system account, e.g. "TREASURY"; unique when set */
   code?: string;
+  /**
+   * the short, human-typed number a customer shares to receive money, e.g.
+   * "4821 7360". The Mongo `_id` stays internal; this is what a payer types
+   * or pastes. Unique across every account, system accounts included.
+   * Optional on the type so rows written before the field existed still load
+   * - the startup backfill assigns them one.
+   */
+  accountNumber?: string;
+  /**
+   * the user's own name for the account ("Savings", "Household"). Purely
+   * cosmetic - never used to route money.
+   */
+  label?: string;
   /** lifecycle state of the account - only ACTIVE accounts can transact */
   status: "ACTIVE" | "CLOSED" | "FROZEN";
   /** the currency this account is denominated in */
@@ -83,6 +96,22 @@ const accountSchema = new mongoose.Schema<
       type: String,
       trim: true,
     },
+
+    // the short number typed by a payer; assigned at account creation
+    accountNumber: {
+      type: String,
+      trim: true,
+      // no `required` here: existing rows are backfilled on boot
+      unique: true,
+      sparse: true,
+    },
+
+    // the owner's own name for the account
+    label: {
+      type: String,
+      trim: true,
+      maxlength: [40, "Label must be 40 characters or fewer"],
+    },
     // lifecycle state of the account - only ACTIVE accounts can transact
     status: {
       type: String,
@@ -122,6 +151,16 @@ accountSchema.index({ users: 1, status: 1 });
 accountSchema.index(
   { code: 1 },
   { unique: true, partialFilterExpression: { code: { $type: "string" } } },
+);
+
+/**
+ * - Account-number lookup
+ * The recipient name-check resolves an account purely by its short number,
+ * so that is the only field it needs to scan.
+ */
+accountSchema.index(
+  { accountNumber: 1 },
+  { unique: true, partialFilterExpression: { accountNumber: { $type: "string" } } },
 );
 
 /**

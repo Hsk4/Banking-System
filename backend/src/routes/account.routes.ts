@@ -16,7 +16,11 @@ const router = express.Router();
  *
  * @see createAccount
  */
-router.post("/", authMiddleware.authMiddleware, accountController.createAccount);
+router.post(
+  "/",
+  authMiddleware.authMiddleware,
+  accountController.createAccount,
+);
 
 /**
  * GET /api/accounts/
@@ -25,7 +29,11 @@ router.post("/", authMiddleware.authMiddleware, accountController.createAccount)
  *
  * @see getUserAccounts
  */
-router.get("/", authMiddleware.authMiddleware, accountController.getUserAccounts);
+router.get(
+  "/",
+  authMiddleware.authMiddleware,
+  accountController.getUserAccounts,
+);
 
 /**
  * GET /api/accounts/balance/:accountId
@@ -38,6 +46,32 @@ router.get(
   "/balance/:accountId",
   authMiddleware.authMiddleware,
   accountController.getAccountBalance,
+);
+
+/**
+ * PATCH /api/accounts/:accountId
+ * Renames one of the caller's accounts ("Savings"). The name is cosmetic.
+ * Requires authentication via JWT token.
+ *
+ * @see renameAccount
+ */
+router.patch(
+  "/:accountId",
+  authMiddleware.authMiddleware,
+  accountController.renameAccount,
+);
+
+/**
+ * GET /api/accounts/:accountId/history.csv
+ * Downloads the account's history as a CSV file.
+ * Requires authentication via JWT token.
+ *
+ * @see exportHistory
+ */
+router.get(
+  "/:accountId/history.csv",
+  authMiddleware.authMiddleware,
+  accountController.exportHistory,
 );
 
 export default router;

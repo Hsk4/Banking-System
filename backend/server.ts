@@ -1,6 +1,7 @@
 import app from "./src/app";
 import connectDB from "./src/config/db";
 import { ensureTreasury } from "./src/services/treasury.service";
+import { backfillAccountNumbers } from "./src/services/accountNumber.service";
 
 /**
  * - Application entry point
@@ -15,6 +16,12 @@ async function start(): Promise<void> {
     await connectDB();
     // the treasury must exist before the first funding request can be served
     await ensureTreasury();
+    // accounts created before short numbers existed get one here, so the
+    // recipient lookup works for every customer without a manual migration
+    const assigned = await backfillAccountNumbers();
+    if (assigned > 0) {
+      console.log(`Assigned short account numbers to ${assigned} account(s)`);
+    }
   } catch (error) {
     // without a database every request would fail - stop instead of starting
     console.error("Could not connect to MongoDB:", error);

@@ -86,6 +86,18 @@ async function authMiddleware(
     return;
   }
 
+  /**
+   * 5b. "sign out everywhere" retires older tokens
+   * Every token carries the version it was issued with; a bump makes this
+   * mismatch, which is what logs out a device the owner no longer has.
+   * Tokens issued before the field existed have no `tv`, so they are read as 0
+   * and stay valid until the first sign-out-everywhere.
+   */
+  if ((decoded?.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
   // 6. attach the authenticated user for downstream controllers
   req.user = user;
   next();
@@ -132,11 +144,17 @@ async function authSystemUserMiddleware(
   // 4. verify the token and load the matching user
   const decoded = verifyToken(token);
   const user = decoded
-    ? await userModel.findById(decoded.id).select("systemUser")
+    ? await userModel.findById(decoded.id).select("systemUser tokenVersion")
     : null;
 
   // 5a. the token may be valid while the user has since been deleted
   if (!user) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+
+  // a retired token from before "sign out everywhere" is no longer a session
+  if ((decoded?.tv ?? 0) !== (user.tokenVersion ?? 0)) {
     res.status(401).json({ message: "Unauthorized" });
     return;
   }
