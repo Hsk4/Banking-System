@@ -22,6 +22,8 @@ automatically.
 | `PORT`                   | Port to listen on (Render sets this for you)                                                                                                                                                              |
 | `CORS_ORIGIN`            | Comma-separated browser origins allowed to call the API, e.g. `http://localhost:3000,https://your-ui.vercel.app`. The Capacitor origins (`https://localhost`, `capacitor://localhost`) are always allowed |
 | `NODE_ENV`               | `production` on Render; the login cookie then becomes `SameSite=None; Secure`                                                                                                                             |
+| `LIMIT_*`, `STEP_UP_*`   | Per-transfer and daily caps, and the threshold that needs an emailed code. All optional; see `.env.example` and `docs/api-notes.md`                                                                        |
+| `LOGIN_*`, `RATE_*`      | Login lockout and rate limits. All optional; see `.env.example`                                                                                                                                            |
 
 ## Run
 
@@ -46,8 +48,8 @@ bun run typecheck   # tsc --noEmit
 | `src/models`                   | Mongoose schemas. No request handling                                                       |
 | `src/controllers`              | Read the request, call a model or service, send JSON                                        |
 | `src/routes`                   | Map URL + method to a controller, plus auth middleware                                      |
-| `src/services`                 | Ledger, treasury and email logic shared by controllers                                      |
+| `src/services`                 | Ledger, treasury, email, account numbers, history, audit, login guard, verification         |
 | `src/middleware`, `src/config` | Auth guard, database connection                                                             |
 | `scripts`                      | One-off utilities (`create-system-user.ts`, `inspect.ts`), run with `bun scripts/<file>.ts` |
-| `docs`                         | API reference (`banking_system.mdx`) and mail setup (`nodemailer.md`)                       |
+| `docs`                         | API reference (`banking_system.mdx`), behaviour notes (`api-notes.md`), mail setup          |
 | `postman`, `.postman`          | Request collections                                                                         |

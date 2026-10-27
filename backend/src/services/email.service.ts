@@ -106,6 +106,77 @@ async function failedTransactionEmail(userEmail: string, userName: string) {
   const html = `<p>Hello ${userName}, your transaction failed.</p>`;
   await sendEmail(userEmail, subject, text, html);
 }
+
+/**
+ * - Send the login-lockout email
+ * Tells the owner their email is paused after repeated failed sign-ins, so a
+ * real person finds out that someone is guessing their password.
+ *
+ * @param userEmail - the owner's email address
+ * @param userName - the owner's name
+ * @param minutes - how long the pause lasts
+ */
+async function sendLockoutEmail(
+  userEmail: string,
+  userName: string,
+  minutes: number,
+) {
+  const subject = "Sign-in paused after failed attempts";
+  const text = `Hello ${userName}, there were too many failed sign-in attempts on your account, so signing in from this email is paused for ${minutes} minutes. If this was not you, someone may be trying your password - consider changing it once the pause ends.`;
+  const html = `<p>Hello ${userName},</p><p>There were too many failed sign-in attempts on your account, so signing in with this email is paused for <strong>${minutes} minutes</strong>.</p><p>If this was not you, someone may be trying your password. Consider changing it once the pause ends.</p>`;
+  await sendEmail(userEmail, subject, text, html);
+}
+
+/**
+ * - Send the new-device sign-in alert
+ * Sent after a successful sign-in from a device the account has not used
+ * before.
+ *
+ * @param userEmail - the owner's email address
+ * @param userName - the owner's name
+ * @param device - the browser/OS description of the new device
+ * @param when - when the sign-in happened
+ */
+async function sendNewDeviceEmail(
+  userEmail: string,
+  userName: string,
+  device: string,
+  when: Date,
+) {
+  const subject = "New sign-in to your account";
+  const line = `A new sign-in to your account was made from ${device} on ${when.toUTCString()}. If this was you, no action is needed. If not, change your password and sign out of all devices.`;
+  await sendEmail(
+    userEmail,
+    subject,
+    `Hello ${userName}, ${line}`,
+    `<p>Hello ${userName},</p><p>${line}</p>`,
+  );
+}
+
+/**
+ * - Send a large-transfer confirmation code
+ * The owner of the sending account receives a short code that must be typed
+ * before a transfer above the step-up threshold can complete.
+ *
+ * @param userEmail - the account owner's email address
+ * @param userName - the account owner's name
+ * @param code - the short numeric code
+ * @param amount - the amount being confirmed, already formatted with its currency
+ * @param minutes - how long the code stays valid
+ */
+async function sendStepUpCodeEmail(
+  userEmail: string,
+  userName: string,
+  code: string,
+  amount: string,
+  minutes: number,
+) {
+  const subject = `Confirm your transfer of ${amount}`;
+  const text = `Hello ${userName}, use the code ${code} to confirm your transfer of ${amount}. It expires in ${minutes} minutes. If you did not start this transfer, do not share this code and contact support.`;
+  const html = `<p>Hello ${userName},</p><p>Use this code to confirm your transfer of <strong>${amount}</strong>:</p><p style="font-size:24px;letter-spacing:4px;font-weight:bold">${code}</p><p>It expires in ${minutes} minutes. If you did not start this transfer, do not share this code and contact support.</p>`;
+  await sendEmail(userEmail, subject, text, html);
+}
+
 /**
  * - Email service
  * Public surface of the mail module, consumed by the controllers.
@@ -113,5 +184,8 @@ async function failedTransactionEmail(userEmail: string, userName: string) {
 export default {
   sendRegistrationEmail,
   sendTransactionEmail,
-  failedTransactionEmail
+  failedTransactionEmail,
+  sendLockoutEmail,
+  sendNewDeviceEmail,
+  sendStepUpCodeEmail,
 };
