@@ -6,7 +6,9 @@ name: apk
 on:
   workflow_dispatch:
   push:
-    tags: ["v*"]
+    # both cases: the plan uses `v1.0.0` and this release is named `V.1.0.1`,
+    # and glob filters are case-sensitive
+    tags: ["v*", "V*"]
 
 # `gh release create` needs to write the release
 permissions:
