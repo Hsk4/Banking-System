@@ -9,8 +9,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // bumped for every published build: Android refuses to install an APK
         // whose versionCode is not higher than the one already on the device
+        // the displayed version is V.1.0.1, but the build number stays above
+        // the previously installed build so Android accepts the update
         versionCode 2
-        versionName "1.0.2"
+        versionName "V.1.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
