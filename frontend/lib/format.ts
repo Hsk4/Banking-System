@@ -87,6 +87,89 @@ export function isObjectId(value: string): boolean {
 }
 
 /**
+ * - Format a date and time, e.g. `12 Mar 2026, 14:05`
+ * Receipts and history rows need more than the day: two transfers on the same
+ * day are otherwise indistinguishable.
+ * @param value - an ISO string or Date
+ */
+export function formatDateTime(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+/**
+ * - Group a short account number for display
+ * `48217360` reads as `4821 7360`, which is easier to check character by
+ * character than a run of eight digits.
+ * @param value - the digits, with or without a space
+ */
+export function formatAccountNumber(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 8) return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  return value;
+}
+
+/**
+ * - The digits of a typed account number
+ * Lets a payer type or paste "4821 7360" or "4821-7360".
+ * @param value - whatever was typed
+ */
+export function accountNumberDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/** Whether a typed value could be an eight-digit account number. */
+export function isAccountNumber(value: string): boolean {
+  return accountNumberDigits(value).length === 8;
+}
+
+/**
+ * - Signed amount for a history row
+ * Money in is prefixed `+`, money out `-`, so direction never depends on
+ * colour alone.
+ * @param amount - the signed amount from the API
+ */
+export function formatSignedAmount(amount: number): string {
+  const sign = amount < 0 ? "-" : "+";
+  return `${sign}${formatMoney(Math.abs(amount))}`;
+}
+
+/**
+ * - Local calendar date as `YYYY-MM-DD`
+ * The value an `<input type="date">` holds, and what the history endpoint
+ * accepts.
+ * @param date - the day
+ */
+export function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * - Initials for an avatar
+ * @param name - a person's full name
+ */
+export function initialsOf(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
+
+/**
  * Turn a client error into a sentence worth showing to a user.
  * @param error - anything thrown by the API layer
  * @returns the message to render

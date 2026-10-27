@@ -1,8 +1,21 @@
 import type {
   Account,
+  AccountLimit,
   AccountsResponse,
+  AdminAccountsResponse,
+  AdminOverview,
+  AdminTransactionsResponse,
+  AdminUsersResponse,
+  AuditResponse,
   AuthResponse,
   BalanceResponse,
+  HistoryQuery,
+  HistoryResponse,
+  MeResponse,
+  RecentRecipient,
+  RecipientLookup,
+  SavedRecipient,
+  TransferLimits,
   TransferResponse,
 } from "./types";
 
@@ -24,7 +37,7 @@ export class ApiError extends Error {
 
 /** Options accepted by {@link api} and {@link apiWithStatus}. */
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   /** abort the request after this many milliseconds (cold starts need a long one) */
   timeoutMs?: number;
@@ -213,6 +226,19 @@ export async function api<T>(
   return data;
 }
 
+/**
+ * - Absolute URL of an API path
+ * Needed for links the browser follows itself (a CSV download), where the
+ * client cannot attach the bearer token - the cookie carries the session
+ * there.
+ *
+ * @param path - path under `/api`, e.g. `"/accounts/123/history.csv"`
+ * @returns the full URL
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}/api${path}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Auth                                                                */
 /* ------------------------------------------------------------------ */
@@ -318,4 +344,245 @@ export function createInitialFunds(input: {
       timeoutMs: TRANSFER_TIMEOUT_MS,
     },
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Session                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Confirm the stored session still works, and read the user fresh.
+ * @returns the signed-in user
+ */
+export function getMe(): Promise<MeResponse> {
+  return api<MeResponse>("/auth/me");
+}
+
+/**
+ * Revoke every session on every device.
+ * The current token stops working too, so the caller must sign out locally.
+ */
+export function logoutAll(): Promise<void> {
+  return api<void>("/auth/logout-all", { method: "POST" });
+}
+
+/* ------------------------------------------------------------------ */
+/* Accounts                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Give an account a name of the owner's choosing ("Savings").
+ * @param accountId - the account
+ * @param label - the new name
+ * @returns the updated account
+ */
+export function renameAccount(accountId: string, label: string): Promise<Account> {
+  return api<Account>(`/accounts/${accountId}`, {
+    method: "PATCH",
+    body: { label },
+  });
+}
+
+/**
+ * Absolute URL of an account's CSV statement.
+ * Used as an `<a href>` so the browser handles the download.
+ *
+ * @param accountId - the account
+ * @param query - the same filters the history screen uses
+ */
+export function statementUrl(accountId: string, query: HistoryQuery = {}): string {
+  const params = new URLSearchParams();
+  if (query.direction && query.direction !== "all") params.set("direction", query.direction);
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiUrl(`/accounts/${accountId}/history.csv${suffix}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* History                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One page of an account's ledger, newest first.
+ * @param accountId - the account
+ * @param query - cursor, page size and filters
+ */
+export function getHistory(
+  accountId: string,
+  query: HistoryQuery = {},
+): Promise<HistoryResponse> {
+  const params = new URLSearchParams();
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit) params.set("limit", String(query.limit));
+  if (query.direction && query.direction !== "all") params.set("direction", query.direction);
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return api<HistoryResponse>(`/transactions/history/${accountId}${suffix}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Limits                                                              */
+/* ------------------------------------------------------------------ */
+
+/** The caps the transfer form shows. */
+export function getTransferLimits(): Promise<TransferLimits> {
+  return api<TransferLimits>("/transactions/limits");
+}
+
+/** How much of today's limit one account has left. */
+export function getAccountLimit(accountId: string): Promise<AccountLimit> {
+  return api<AccountLimit>(`/transactions/limits/${accountId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Recipients                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Check who a short account number belongs to, before money moves.
+ * @param accountNumber - what the payer typed; spaces are allowed
+ */
+export function lookupRecipient(accountNumber: string): Promise<RecipientLookup> {
+  const digits = accountNumber.replace(/\D/g, "");
+  return api<RecipientLookup>(`/recipients/lookup/${digits}`);
+}
+
+/** Every payee the customer has saved. */
+export async function getRecipients(): Promise<SavedRecipient[]> {
+  const data = await api<{ recipients: SavedRecipient[] }>("/recipients");
+  return data.recipients;
+}
+
+/** The people this customer paid most recently. */
+export async function getRecentRecipients(): Promise<RecentRecipient[]> {
+  const data = await api<{ recipients: RecentRecipient[] }>("/recipients/recent");
+  return data.recipients;
+}
+
+/**
+ * Save a payee, or rename one already saved.
+ * @param input - the account number and an optional nickname
+ */
+export function saveRecipient(input: {
+  accountNumber: string;
+  nickname?: string;
+}): Promise<SavedRecipient> {
+  return api<{ recipient: SavedRecipient }>("/recipients", {
+    method: "POST",
+    body: input,
+  }).then((data) => data.recipient);
+}
+
+/** Remove a saved payee. */
+export function deleteRecipient(recipientId: string): Promise<void> {
+  return api<void>(`/recipients/${recipientId}`, { method: "DELETE" });
+}
+
+/* ------------------------------------------------------------------ */
+/* Step-up confirmation                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Release a held large transfer with the code emailed to the owner.
+ * @param transactionId - the held transaction
+ * @param code - the six-digit code
+ */
+export function confirmTransfer(
+  transactionId: string,
+  code: string,
+): Promise<TransferResponse> {
+  return api<TransferResponse>(`/transactions/${transactionId}/confirm`, {
+    method: "POST",
+    body: { code },
+    timeoutMs: TRANSFER_TIMEOUT_MS,
+  });
+}
+
+/**
+ * The receipt for one transaction.
+ * @param transactionId - the transaction to read
+ */
+export function getTransaction(transactionId: string): Promise<{
+  transaction: import("./types").Transaction & {
+    fromAccountInfo?: { accountNumber: string | null; label: string | null; status: string; type: string } | null;
+    toAccountInfo?: { accountNumber: string | null; label: string | null; status: string; type: string } | null;
+    isMine?: boolean;
+  };
+}> {
+  return api(`/transactions/${transactionId}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Money minted, users, accounts and today's activity. */
+export function getAdminOverview(): Promise<AdminOverview> {
+  return api<AdminOverview>("/admin/overview");
+}
+
+/**
+ * Search accounts with their owners and balances.
+ * @param query - free text, a status filter and a page
+ */
+export function getAdminAccounts(query: {
+  q?: string;
+  status?: string;
+  page?: number;
+} = {}): Promise<AdminAccountsResponse> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.status) params.set("status", query.status);
+  if (query.page) params.set("page", String(query.page));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return api<AdminAccountsResponse>(`/admin/accounts${suffix}`);
+}
+
+/**
+ * Freeze, unfreeze or close a customer account.
+ * @param accountId - the account
+ * @param status - the new status
+ * @param reason - optional, recorded in the audit log
+ */
+export function setAdminAccountStatus(
+  accountId: string,
+  status: "ACTIVE" | "FROZEN" | "CLOSED",
+  reason?: string,
+): Promise<{ account: Account; changed: boolean }> {
+  return api(`/admin/accounts/${accountId}/status`, {
+    method: "PATCH",
+    body: { status, reason },
+  });
+}
+
+/**
+ * Search transactions, with the ledger entries behind each one.
+ * @param query - free text, a date range and a page
+ */
+export function getAdminTransactions(query: {
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+} = {}): Promise<AdminTransactionsResponse> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.page) params.set("page", String(query.page));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return api<AdminTransactionsResponse>(`/admin/transactions${suffix}`);
+}
+
+/** The append-only log of administrator actions. */
+export function getAdminAudit(page = 1): Promise<AuditResponse> {
+  return api<AuditResponse>(`/admin/audit?page=${page}`);
+}
+
+/** The customer directory. */
+export function getAdminUsers(q = ""): Promise<AdminUsersResponse> {
+  const suffix = q ? `?q=${encodeURIComponent(q)}` : "";
+  return api<AdminUsersResponse>(`/admin/users${suffix}`);
 }
