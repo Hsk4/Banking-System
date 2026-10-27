@@ -1,0 +1,397 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Banking UI Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky tab bar over a single reading column; each tab is one panel of the build plan. */
+:root{
+  --bg:#f4f7f8; --surface:#ffffff; --fg:#122026; --muted:#52646c; --line:#d6e0e4;
+  --accent:#0b6e69; --accent-fg:#ffffff; --accent-soft:#dff1ef;
+  --warn:#8a5a00; --warn-soft:#fbf0d6; --crit:#a3262a; --crit-soft:#fbe3e3; --ok:#1f6f3f; --ok-soft:#dff3e6;
+  --code-bg:#eaf0f2;
+  --font-body:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1519; --surface:#151e24; --fg:#e6eef1; --muted:#9db0b8; --line:#26343c;
+    --accent:#4fc7bf; --accent-fg:#06201e; --accent-soft:#12302f;
+    --warn:#f0c15a; --warn-soft:#2e2510; --crit:#ff8a8d; --crit-soft:#3a1a1c; --ok:#6fd49a; --ok-soft:#14301f;
+    --code-bg:#0a1115; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1519; --surface:#151e24; --fg:#e6eef1; --muted:#9db0b8; --line:#26343c;
+  --accent:#4fc7bf; --accent-fg:#06201e; --accent-soft:#12302f;
+  --warn:#f0c15a; --warn-soft:#2e2510; --crit:#ff8a8d; --crit-soft:#3a1a1c; --ok:#6fd49a; --ok-soft:#14301f;
+  --code-bg:#0a1115; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:860px;margin:0 auto}
+header.top{padding-block:28px 12px}
+.eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:6px 0 10px;text-wrap:balance;letter-spacing:-.01em}
+.lede{color:var(--muted);max-width:62ch;margin:0}
+.stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.pill{font-family:var(--font-mono);font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted)}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin-top:12px}
+nav.tabs .row{display:flex;gap:4px;overflow-x:auto;padding-block:8px;scrollbar-width:thin}
+nav.tabs button{flex:none;font:inherit;font-size:14px;font-weight:500;color:var(--muted);background:transparent;border:1px solid transparent;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+nav.tabs button:hover{color:var(--fg);background:var(--surface)}
+nav.tabs button[aria-selected="true"]{color:var(--accent-fg);background:var(--accent)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section.panel{padding-top:28px}
+h2{font-size:24px;line-height:1.25;margin:0 0 6px;text-wrap:balance}
+h3{font-size:17px;margin:28px 0 8px}
+p{margin:0 0 12px;max-width:68ch}
+.sub{color:var(--muted);margin-bottom:20px}
+code{font-family:var(--font-mono);font-size:.88em;background:var(--code-bg);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.codebox{position:relative;margin:10px 0 16px}
+.codebox pre{margin:0;background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;font-family:var(--font-mono);font-size:13px;line-height:1.55}
+.codebox .label{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:4px;display:block}
+.copy{position:absolute;top:24px;right:8px;font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer}
+.copy:hover{color:var(--fg)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:8px 0 16px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--bg)}
+.m{font-family:var(--font-mono);font-size:11px;font-weight:500;padding:2px 6px;border-radius:4px;margin-right:6px}
+.m.get{background:var(--ok-soft);color:var(--ok)}
+.m.post{background:var(--accent-soft);color:var(--accent)}
+.path{font-family:var(--font-mono);font-size:13px;overflow-wrap:anywhere}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;margin-right:4px}
+.tag.sys{background:var(--warn-soft);color:var(--warn)}
+.tag.pub{background:var(--ok-soft);color:var(--ok)}
+.tag.auth{background:var(--accent-soft);color:var(--accent)}
+.issue{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:0 0 12px;border-left-width:4px}
+.issue.crit{border-left-color:var(--crit)} .issue.warn{border-left-color:var(--warn)} .issue.info{border-left-color:var(--accent)}
+.issue h3{margin:0 0 4px;font-size:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sev{font-size:11px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px}
+.crit .sev{background:var(--crit-soft);color:var(--crit)} .warn .sev{background:var(--warn-soft);color:var(--warn)} .info .sev{background:var(--accent-soft);color:var(--accent)}
+.issue p{margin:0 0 8px} .issue p:last-child{margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:8px 0 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h3{margin:0 0 4px;font-size:16px}
+.card p{font-size:14px;color:var(--muted);margin:0 0 8px}
+.card ul{margin:0;padding-left:18px;font-size:14px}
+.callout{background:var(--accent-soft);border-radius:10px;padding:12px 16px;margin:12px 0 16px;max-width:68ch}
+.callout p{margin:0}
+ul.plain,ol.plain{margin:0 0 14px;padding-left:20px;max-width:68ch}
+li{margin-bottom:4px}
+.check{list-style:none;padding:0;margin:0 0 20px}
+.check li{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.check input{margin-top:5px;width:16px;height:16px;accent-color:var(--accent);flex:none}
+.check label{cursor:pointer;min-width:0}
+.check input:checked + label{color:var(--muted);text-decoration:line-through}
+.progress{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:13px;color:var(--muted);margin:8px 0 16px}
+.bar{flex:1;max-width:260px;height:6px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+footer{margin-top:40px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+footer a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Banking System · frontend plan</div>
+  <h1>Build the UI for your banking API</h1>
+  <p class="lede">Based on a read of <code>Hsk4/Banking-System</code> as of 25 Oct 2026. It covers what the API actually exposes, what to fix before a UI sits on top of it, and the order to build the Next.js side in. You write the code; each tab says what to build and why.</p>
+  <div class="stack"><span class="pill">Next.js 16</span><span class="pill">shadcn/ui</span><span class="pill">Vercel</span><span class="pill">Bun + Express 5</span><span class="pill">Render</span></div>
+</header>
+
+<nav class="tabs" aria-label="Guide sections"><div class="row" role="tablist" id="tablist"></div></nav>
+
+<!-- API -->
+<section class="panel" id="p-api" data-title="API map" role="tabpanel" hidden>
+  <h2>What the backend exposes</h2>
+  <p class="sub">Eight endpoints. Auth works through an httpOnly <code>token</code> cookie, with an <code>Authorization: Bearer</code> fallback.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Endpoint</th><th>Access</th><th>Body</th><th>Returns</th></tr></thead>
+    <tbody>
+      <tr><td><span class="m post">POST</span><span class="path">/api/auth/register</span></td><td><span class="tag pub">public</span></td><td><code>name, email, password, confirmPassword</code></td><td>201 <code>{ user, token }</code>; 400 with <code>message</code></td></tr>
+      <tr><td><span class="m post">POST</span><span class="path">/api/auth/login</span></td><td><span class="tag pub">public</span></td><td><code>email, password</code></td><td>200 <code>{ user, token }</code>; 400 with <code>message</code></td></tr>
+      <tr><td><span class="m post">POST</span><span class="path">/api/auth/logout</span></td><td><span class="tag auth">cookie</span></td><td>none</td><td>200; 400 if no token</td></tr>
+      <tr><td><span class="m get">GET</span><span class="path">/api/accounts</span></td><td><span class="tag auth">user</span></td><td>none</td><td><code>{ accounts: [{ _id, status, currency, createdAt }] }</code></td></tr>
+      <tr><td><span class="m post">POST</span><span class="path">/api/accounts</span></td><td><span class="tag sys">system user</span></td><td>none</td><td>201 the new account (PKR, ACTIVE)</td></tr>
+      <tr><td><span class="m get">GET</span><span class="path">/api/accounts/balance/:accountId</span></td><td><span class="tag auth">user</span></td><td>none</td><td><code>{ accountId, balance }</code>; 404 if not yours</td></tr>
+      <tr><td><span class="m post">POST</span><span class="path">/api/transactions</span></td><td><span class="tag auth">user</span></td><td><code>fromAccount, toAccount, amount (number), idempotencyKey</code></td><td>201 / 200 / 202 / 409 / 400 / 500, see Transfers tab</td></tr>
+      <tr><td><span class="m post">POST</span><span class="path">/api/transactions/system/initial-funds</span></td><td><span class="tag sys">system user</span></td><td><code>toAccount, amount, idempotencyKey</code></td><td>201 with the transaction</td></tr>
+      <tr><td><span class="m get">GET</span><span class="path">/</span></td><td><span class="tag pub">public</span></td><td>none</td><td><code>{ status: "ok" }</code> (confirmed live on Render)</td></tr>
+    </tbody>
+  </table></div>
+  <h3>What is missing</h3>
+  <div class="grid">
+    <div class="card"><h3>No "who am I" route</h3><p>The UI cannot ask the server for the current user. Login and register return <code>user</code> once; keep it in client state and treat a 401 on <code>GET /api/accounts</code> as "logged out".</p></div>
+    <div class="card"><h3>No transaction history</h3><p>There is no list endpoint for transactions or ledger rows. A statement page needs a new <code>GET</code> route first.</p></div>
+    <div class="card"><h3>No recipient lookup</h3><p>Transfers need the destination account's raw ObjectId. Until you add a lookup, the form takes a pasted account ID.</p></div>
+  </div>
+</section>
+
+<!-- FIX -->
+<section class="panel" id="p-fix" data-title="Fix first" role="tabpanel" hidden>
+  <h2>Backend problems that will surface in the UI</h2>
+  <p class="sub">Found while reading the controllers and middleware. The first three decide whether the app can work at all.</p>
+
+  <div class="issue crit"><h3><span class="sev">blocker</span>Normal users cannot create an account</h3>
+    <p><code>POST /api/accounts</code> is wired to <code>authSystemUserMiddleware</code>, which only lets users with <code>systemUser: true</code> through. Everyone else gets 401. The route comment says "authenticated user", so this looks like the wrong middleware.</p>
+    <p><b>Fix:</b> in <code>account.routes.ts</code>, use <code>authMiddleware.authMiddleware</code> for the create route.</p></div>
+
+  <div class="issue crit"><h3><span class="sev">security</span>Transfers do not check who owns the source account</h3>
+    <p><code>createTransaction</code> loads <code>fromAccount</code> by ID and never compares its <code>users</code> to <code>req.user._id</code>. Any logged-in user can move money out of any account they know the ID of. Balance lookups do check ownership; transfers do not.</p>
+    <p><b>Fix:</b> reject with 403 unless the source account's <code>users</code> includes the caller. Do this before the UI is public.</p></div>
+
+  <div class="issue warn"><h3><span class="sev">limit</span>One account per user</h3>
+    <p>The account schema has a unique index on <code>{ users, status }</code>. A second ACTIVE account for the same owner fails with a duplicate-key error, which nothing catches, so the client sees a bare 500. Decide whether one account is intended. If not, drop the unique index; if so, return a clear 409 and hide the "new account" button once one exists.</p></div>
+
+  <div class="issue warn"><h3><span class="sev">cors</span>No CORS and a lax cookie</h3>
+    <p>The API sends no CORS headers, and the cookie is <code>sameSite: "lax"</code>, which browsers will not attach to cross-site <code>fetch</code> calls from your Vercel domain. The simple route is to avoid cross-origin entirely: the Next.js app proxies <code>/api/*</code> to Render (see Auth tab).</p></div>
+
+  <div class="issue warn"><h3><span class="sev">ux</span>Every transfer waits 15 seconds</h3>
+    <p>There is a hard-coded <code>setTimeout</code> of 15 s between the debit and credit entries. Fine as a demo of the transaction window, but the form needs a long pending state. Remove it if it was only for testing.</p></div>
+
+  <div class="issue info"><h3><span class="sev">setup</span>You need a system user to see any money</h3>
+    <p>New accounts start at 0, and the only way to add funds is the system-only initial-funds route. <code>systemUser</code> is immutable and defaults to false, so flip it in Atlas for one seed user, then call initial-funds to fund test accounts.</p></div>
+
+  <div class="issue info"><h3><span class="sev">note</span>Money is a plain JS number</h3>
+    <p>Amounts and balances are floats in PKR, with no minor units. Fine for a learning project; format with <code>Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR" })</code> and restrict the input to two decimals.</p></div>
+</section>
+
+<!-- SETUP -->
+<section class="panel" id="p-setup" data-title="Project setup" role="tabpanel" hidden>
+  <h2>Create the Next.js project</h2>
+  <p class="sub">Next.js 16 renamed <code>middleware.ts</code> to <code>proxy.ts</code> (function name <code>proxy</code>), and it runs on the Node.js runtime by default. Use that name from the start.</p>
+  <div class="codebox"><span class="label">terminal</span><pre>bunx create-next-app@latest banking-ui --ts --app --src-dir --eslint --tailwind
+cd banking-ui
+bunx --bun shadcn@latest init</pre><button class="copy" type="button">Copy</button></div>
+  <p>The shadcn docs also show <code>shadcn@latest init -t next</code> to create the project and init in one step. Either works; the create-next-app route keeps you in control of the options.</p>
+
+  <h3>Components to add up front</h3>
+  <div class="codebox"><span class="label">terminal</span><pre>bunx --bun shadcn@latest add button input label card form sonner skeleton badge table dialog alert</pre><button class="copy" type="button">Copy</button></div>
+
+  <h3>Suggested structure</h3>
+  <ul class="plain">
+    <li><code>src/lib/api.ts</code>: one <code>fetch</code> wrapper that sends <code>credentials: "include"</code>, parses <code>message</code> from error bodies, and throws a typed error carrying the status.</li>
+    <li><code>src/lib/types.ts</code>: <code>Account</code>, <code>Transaction</code> and <code>ApiError</code> matching the shapes in the API tab.</li>
+    <li><code>src/app/(auth)/login</code> and <code>register</code>, <code>src/app/(app)/dashboard</code> and <code>transfer</code>.</li>
+    <li><code>src/proxy.ts</code>: redirect between the two groups based on whether the <code>token</code> cookie exists.</li>
+  </ul>
+
+  <h3>Data fetching</h3>
+  <p>TanStack Query fits well here: balances are per-account queries, transfers are a mutation with a long pending state, and a 401 handler in the query client can send the user back to login in one place. Plain server components also work for the account list, but the transfer flow needs client state either way.</p>
+</section>
+
+<!-- AUTH -->
+<section class="panel" id="p-auth" data-title="Auth &amp; proxy" role="tabpanel" hidden>
+  <h2>Same-origin proxy, cookie auth</h2>
+  <p class="sub">The browser only ever talks to your Vercel domain. Next.js forwards <code>/api/*</code> to Render, so the <code>Set-Cookie</code> from login lands on your own domain and is sent back automatically.</p>
+
+  <h3>1. Rewrite to the backend</h3>
+  <div class="codebox"><span class="label">next.config.ts</span><pre>async rewrites() {
+  return [{
+    source: "/api/:path*",
+    destination: `${process.env.BACKEND_URL}/api/:path*`,
+  }];
+}</pre><button class="copy" type="button">Copy</button></div>
+  <p>Set <code>BACKEND_URL=https://banking-system-r8bq.onrender.com</code> in <code>.env.local</code> and in Vercel's project settings. Client code then calls relative paths such as <code>/api/accounts</code>, which also avoids hard-coding the Render URL in the bundle.</p>
+
+  <h3>2. Ignore the token in the response body</h3>
+  <p>Login and register return the JWT in JSON as well as in the cookie. Do not store it in <code>localStorage</code>. The httpOnly cookie is the safer copy and the one the API reads first.</p>
+
+  <h3>3. Gate routes in <code>proxy.ts</code></h3>
+  <ul class="plain">
+    <li>Check only that the <code>token</code> cookie exists. The proxy cannot cheaply verify the JWT because the secret lives on the backend.</li>
+    <li>No cookie on <code>/dashboard</code> or <code>/transfer</code>: redirect to <code>/login</code>. Cookie present on <code>/login</code>: redirect to <code>/dashboard</code>.</li>
+    <li>Set the <code>matcher</code> to skip <code>api</code>, <code>_next/static</code>, <code>_next/image</code> and the favicon. The Next.js docs show this exact negative pattern, and without it the proxy runs on assets too.</li>
+  </ul>
+  <div class="callout"><p>An expired or blacklisted token still has a cookie, so the proxy lets the page through. The real check is the API: any 401 should clear client state and push to <code>/login</code>.</p></div>
+
+  <h3>4. Login and logout behavior</h3>
+  <ul class="plain">
+    <li>Register and login both set the cookie, so after success go straight to <code>/dashboard</code>. No second login step.</li>
+    <li>Show the server's <code>message</code> field on failures ("User already exists", "Passwords do not match", "Invalid credentials"). Validate the same rules client-side first: password at least 6 characters, matching confirmation, valid email.</li>
+    <li>Logout calls <code>POST /api/auth/logout</code>, then clears query cache and routes to <code>/login</code>. The backend blacklists the token for three days.</li>
+  </ul>
+</section>
+
+<!-- SCREENS -->
+<section class="panel" id="p-screens" data-title="Screens" role="tabpanel" hidden>
+  <h2>Screens, in build order</h2>
+  <p class="sub">Each one is useful on its own, so you can deploy after every step.</p>
+  <div class="grid">
+    <div class="card"><h3>1. Register and login</h3><p>Two cards with shadcn <code>Form</code>. Disable the button while pending; surface server messages inline.</p><ul><li>Fields match the API tab exactly</li><li>Toast on success via Sonner</li></ul></div>
+    <div class="card"><h3>2. Dashboard</h3><p>List accounts from <code>GET /api/accounts</code>, one card each, with a skeleton while balances load.</p><ul><li>One balance query per account ID</li><li>Status badge: ACTIVE, FROZEN, CLOSED</li><li>Copy-account-ID button, since recipients need it</li></ul></div>
+    <div class="card"><h3>3. Open account</h3><p>A single button posting to <code>/api/accounts</code>. Only works after the route fix; handle 401 and 500 with a readable message.</p></div>
+    <div class="card"><h3>4. Transfer</h3><p>From-account select, recipient ID, amount, submit. This is the hard screen; see the Transfers tab.</p></div>
+    <div class="card"><h3>5. Admin: fund an account</h3><p>A separate <code>/admin/fund</code> page for the system user, posting to initial-funds. Because there is no "me" route, show it behind a direct URL and let a 401 explain itself. Keep it out of the main nav.</p></div>
+    <div class="card"><h3>6. History (later)</h3><p>Needs a new backend endpoint listing transactions where the account is source or destination. Build the API first.</p></div>
+  </div>
+  <h3>Empty and error states worth designing</h3>
+  <ul class="plain">
+    <li>New user, no account yet: one clear call to action.</li>
+    <li>Balance request returns 404: the account is not yours; do not retry.</li>
+    <li>Render is waking up: the first request after idle can take a long time on a free instance, so show a "waking the server" message after a few seconds instead of a blank page.</li>
+  </ul>
+</section>
+
+<!-- TRANSFER -->
+<section class="panel" id="p-transfer" data-title="Transfers" role="tabpanel" hidden>
+  <h2>Making the transfer form safe</h2>
+  <p class="sub">The endpoint is idempotent by <code>idempotencyKey</code>, which is what lets the UI retry without double-paying.</p>
+
+  <h3>Idempotency key rules</h3>
+  <ul class="plain">
+    <li>Generate the key with <code>crypto.randomUUID()</code> when the user opens the form, not on each click.</li>
+    <li>Keep the same key if the user retries after a network error or timeout. The server will answer with the stored result.</li>
+    <li>Generate a new key after the user edits amount or accounts, and after a 409 (the server tells you to).</li>
+  </ul>
+
+  <h3>Response handling</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Status</th><th>Meaning</th><th>What the UI does</th></tr></thead>
+    <tbody>
+      <tr><td><code>201</code></td><td>Completed now</td><td>Success state, invalidate account and balance queries</td></tr>
+      <tr><td><code>200</code></td><td>Same key already completed</td><td>Treat as success; say "already processed"</td></tr>
+      <tr><td><code>202</code></td><td>Same key still processing</td><td>Keep the pending state; poll by re-submitting the same key every few seconds</td></tr>
+      <tr><td><code>409</code></td><td>Key previously FAILED or REVERSED</td><td>New key, let the user retry</td></tr>
+      <tr><td><code>400</code></td><td>Validation, insufficient balance, inactive account</td><td>Show <code>message</code> inline; it includes the current balance</td></tr>
+      <tr><td><code>500</code></td><td>Rolled back</td><td>Safe to retry; keep the same key</td></tr>
+      <tr><td><code>401</code></td><td>Session ended</td><td>Redirect to login</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>The 15-second wait</h3>
+  <ul class="plain">
+    <li>Disable the form on submit, show a progress state with elapsed seconds, and block navigating away without a warning.</li>
+    <li>Do not use a plain request timeout shorter than 30 seconds, or the UI will report failure for a transfer that then completes.</li>
+    <li>Check the current limit for proxied rewrites on your Vercel plan. If a long request gets cut off, the 202 and 200 paths above let you recover with the same key.</li>
+  </ul>
+
+  <h3>Client-side checks before sending</h3>
+  <ul class="plain">
+    <li>Amount is a number greater than 0, sent as a JSON number and not a string (the server rejects strings).</li>
+    <li>From and to accounts differ.</li>
+    <li>Recipient is a 24-character hex ID. The server rejects anything else with "Invalid fromAccount or toAccount".</li>
+    <li>Amount does not exceed the displayed balance. This is only a convenience; the server stays the authority.</li>
+  </ul>
+</section>
+
+<!-- DEPLOY -->
+<section class="panel" id="p-deploy" data-title="Deploy" role="tabpanel" hidden>
+  <h2>Ship to Vercel</h2>
+  <p class="sub">Because of the proxy, the backend needs almost no changes for deployment.</p>
+  <ol class="plain">
+    <li>Push the UI to its own GitHub repo, separate from the API.</li>
+    <li>Import it in Vercel. The framework preset detects Next.js; no custom build settings are needed.</li>
+    <li>Add <code>BACKEND_URL</code> under Environment Variables for Production and Preview.</li>
+    <li>On Render, confirm <code>NODE_ENV=production</code> is set. The cookie's <code>secure</code> flag follows it, and your Vercel domain is HTTPS.</li>
+    <li>Deploy, then test in order: register, login, open account, fund via the system user, transfer, logout.</li>
+  </ol>
+  <h3>If login works but the next page says unauthorized</h3>
+  <ul class="plain">
+    <li>Open the browser's network tab and check that the response to <code>/api/auth/login</code> has a <code>Set-Cookie</code> header.</li>
+    <li>Check the cookie appears under your Vercel domain, not the Render one. If it is on Render, the code is calling Render directly instead of the relative <code>/api</code> path.</li>
+    <li>Check that <code>credentials: "include"</code> is on every fetch. Same-origin requests send cookies by default, so this mainly matters if you ever switch to cross-origin.</li>
+  </ul>
+  <div class="callout"><p>Preview deployments get their own URLs, but with the rewrite approach they all work without touching CORS, which is the main reason to prefer it here.</p></div>
+</section>
+
+<!-- CHECKLIST -->
+<section class="panel" id="p-checklist" data-title="Checklist" role="tabpanel" hidden>
+  <h2>Build checklist</h2>
+  <p class="sub">Ticks are saved in this browser only.</p>
+  <div class="progress"><span id="pct">0 of 0</span><div class="bar"><i id="barfill"></i></div></div>
+  <ul class="check" id="checklist"></ul>
+</section>
+
+<footer>
+  Sources: <a href="https://nextjs.org/docs/app/api-reference/file-conventions/proxy">Next.js proxy.js reference</a> · <a href="https://ui.shadcn.com/docs/installation/next">shadcn/ui Next.js install</a> · repo <a href="https://github.com/Hsk4/Banking-System">Hsk4/Banking-System</a>
+</footer>
+</div>
+
+<script>
+(function(){
+  var panels = Array.prototype.slice.call(document.querySelectorAll("section.panel"));
+  var tablist = document.getElementById("tablist");
+  var ids = [];
+  panels.forEach(function(p){
+    var id = p.id.replace("p-","");
+    ids.push(id);
+    var b = document.createElement("button");
+    b.type="button"; b.setAttribute("role","tab"); b.id="t-"+id;
+    b.setAttribute("aria-controls",p.id); b.setAttribute("aria-selected","false");
+    b.innerHTML = p.getAttribute("data-title");
+    b.addEventListener("click", function(){ show(id,true); });
+    tablist.appendChild(b);
+  });
+  function show(id, updateHash){
+    if(ids.indexOf(id)<0) id = ids[0];
+    panels.forEach(function(p){ p.hidden = (p.id !== "p-"+id); });
+    ids.forEach(function(i){
+      var b = document.getElementById("t-"+i);
+      b.setAttribute("aria-selected", i===id ? "true":"false");
+      if(i===id && updateHash){ b.scrollIntoView({block:"nearest",inline:"nearest"}); }
+    });
+    try{ if(updateHash){ history.replaceState(null,"","#"+id); } }catch(e){}
+    try{ localStorage.setItem("bankui-tab", id); }catch(e){}
+    if(updateHash){ window.scrollTo(0, 0); }
+  }
+  var start = (location.hash||"").slice(1);
+  if(ids.indexOf(start)<0){ try{ start = localStorage.getItem("bankui-tab")||ids[0]; }catch(e){ start = ids[0]; } }
+  show(start,false);
+  window.addEventListener("hashchange", function(){ show((location.hash||"").slice(1), false); });
+
+  // copy buttons
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function(btn){
+    btn.addEventListener("click", function(){
+      var pre = btn.parentNode.querySelector("pre");
+      var text = pre.textContent;
+      function done(ok){ btn.textContent = ok ? "Copied" : "Select and copy"; setTimeout(function(){ btn.textContent="Copy"; },1600); }
+      try{
+        navigator.clipboard.writeText(text).then(function(){ done(true); }, function(){ sel(pre); done(false); });
+      }catch(e){ sel(pre); done(false); }
+    });
+  });
+  function sel(el){ var r=document.createRange(); r.selectNodeContents(el); var s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  // checklist
+  var items = [
+    "Fix POST /api/accounts to use the normal auth middleware",
+    "Add the ownership check on fromAccount in createTransaction",
+    "Decide on one account per user, or drop the unique index",
+    "Flip systemUser to true for one seed user in Atlas",
+    "Create the Next.js 16 project and run shadcn init",
+    "Add the /api rewrite and BACKEND_URL env var",
+    "Build the fetch wrapper with typed errors and 401 handling",
+    "Register and login screens working against Render",
+    "proxy.ts redirects based on the token cookie",
+    "Dashboard lists accounts with balances",
+    "Open-account button with readable errors",
+    "Admin page funds an account via initial-funds",
+    "Transfer form with stable idempotency key and 15 s pending state",
+    "Logout clears the cache and the session",
+    "Set BACKEND_URL and NODE_ENV, deploy to Vercel, run the full flow"
+  ];
+  var key = "bankui-checks", saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(key)||"{}"); }catch(e){ saved = {}; }
+  var ul = document.getElementById("checklist");
+  items.forEach(function(text,i){
+    var li = document.createElement("li");
+    var cb = document.createElement("input"); cb.type="checkbox"; cb.id="chk"+i; cb.checked = !!saved[i];
+    var lb = document.createElement("label"); lb.htmlFor = cb.id; lb.textContent = text;
+    cb.addEventListener("change", function(){ saved[i] = cb.checked; try{ localStorage.setItem(key, JSON.stringify(saved)); }catch(e){} update(); });
+    li.appendChild(cb); li.appendChild(lb); ul.appendChild(li);
+  });
+  function update(){
+    var n = items.reduce(function(a,_,i){ return a + (saved[i]?1:0); },0);
+    document.getElementById("pct").textContent = n+" of "+items.length;
+    document.getElementById("barfill").style.width = (n/items.length*100)+"%";
+  }
+  update();
+})();
+</script>
+
+</body></html>
