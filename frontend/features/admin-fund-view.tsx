@@ -6,11 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ApiError, createInitialFunds } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { isObjectId } from "@/lib/format";
-import {
-  BackToDashboard,
-  TransactionResult,
-} from "@/components/transaction-result";
+import { isAccountNumber, isObjectId } from "@/lib/format";
+import type { Transaction } from "@/lib/types";
+import { BackToDashboard } from "@/components/transaction-result";
+import { Receipt, receiptFromTransaction } from "@/components/receipt";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, Spinner } from "@/components/ui/card";
@@ -42,6 +41,10 @@ export function AdminFundView() {
   const [forbidden, setForbidden] = useState(false);
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  // the header that came back, so the receipt shows its real reference
+  const [lastTransaction, setLastTransaction] = useState<Transaction | null>(
+    null,
+  );
   /** the last request was accepted but is still being committed */
   const [stillProcessing, setStillProcessing] = useState(false);
 
@@ -56,8 +59,11 @@ export function AdminFundView() {
   function validate(): boolean {
     const numeric = Number(amount);
     const next: Errors = {};
-    if (!isObjectId(toAccount.trim())) {
-      next.to = "Enter the 24-character account ID";
+    // the short number is what an operator has from the account list; the
+    // internal id still works for old bookmarks
+    const target = toAccount.trim();
+    if (!isAccountNumber(target) && !isObjectId(target)) {
+      next.to = "Enter the 8-digit account number";
     }
     if (!Number.isFinite(numeric) || numeric <= 0) {
       next.amount = "Enter an amount greater than zero";
@@ -103,6 +109,7 @@ export function AdminFundView() {
         toAccount: toAccount.trim(),
         status: transactionStatus,
       });
+      setLastTransaction(response.transaction ?? null);
       if (replayed) {
         toast.info("These funds had already been added.");
       }
@@ -158,31 +165,44 @@ export function AdminFundView() {
 
       {result ? (
         <Card className="border p-6">
-          <TransactionResult
-            title="Funds added"
-            tone="success"
-            amount={result.amount}
-            toAccount={result.toAccount}
-            status={result.status}
-            actions={
-              <>
-                <BackToDashboard />
-                <Button
-                  variant="outline"
-                  className="flex-1 justify-center"
-                  onClick={() => {
-                    setResult(null);
-                    setToAccount("");
-                    setAmount("");
-                    setErrors({});
-                    rotateKey();
-                  }}
-                >
-                  Fund another
-                </Button>
-              </>
-            }
-          />
+          <div className="text-center">
+            <h2 role="status" className="text-base font-semibold sm:text-lg">
+              Funds added
+            </h2>
+            <div className="mt-3">
+              <Receipt
+                data={
+                  lastTransaction
+                    ? receiptFromTransaction(lastTransaction)
+                    : {
+                        reference: null,
+                        createdAt: new Date().toISOString(),
+                        amount: result.amount,
+                        status: result.status,
+                        from: { name: "Treasury" },
+                        to: { accountNumber: result.toAccount },
+                      }
+                }
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <BackToDashboard />
+            <Button
+              variant="outline"
+              className="flex-1 justify-center"
+              onClick={() => {
+                setResult(null);
+                setToAccount("");
+                setAmount("");
+                setErrors({});
+                rotateKey();
+              }}
+            >
+              Fund another
+            </Button>
+          </div>
         </Card>
       ) : (
         <Card className="relative overflow-hidden border p-5 sm:p-6 max-sm:-mx-4 max-sm:rounded-none max-sm:border-x-0">
@@ -227,11 +247,12 @@ export function AdminFundView() {
                 value={toAccount}
                 invalid={Boolean(errors.to)}
                 disabled={pending}
-                placeholder="24-character account ID"
+                placeholder="4821 7360"
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
-                className="font-mono text-xs"
+                inputMode="numeric"
+                className="font-mono"
                 maxLength={24}
                 onChange={(event) => {
                   setToAccount(event.target.value);

@@ -5,12 +5,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeftRight,
+  History,
   LayoutDashboard,
   LogOut,
   Moon,
+  ShieldOff,
   Sun,
+  Users,
   Wrench,
 } from "lucide-react";
+import { logoutAll } from "@/lib/api";
+import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/cn";
@@ -25,7 +30,7 @@ interface NavItem {
 
 /** Where each role is sent by the wordmark. */
 export function homeFor(user: User | null): string {
-  return user?.systemUser ? "/admin/fund" : "/dashboard";
+  return user?.systemUser ? "/admin" : "/dashboard";
 }
 
 /**
@@ -38,17 +43,28 @@ export function homeFor(user: User | null): string {
  */
 function navFor(user: User | null): NavItem[] {
   if (user?.systemUser) {
-    return [{ href: "/admin/fund", label: "Fund account", icon: Wrench }];
+    return [
+      { href: "/admin", label: "Overview", icon: LayoutDashboard },
+      { href: "/admin/accounts", label: "Accounts", icon: Users },
+      { href: "/admin/fund", label: "Fund account", icon: Wrench },
+    ];
   }
+  // the three tabs a banking app has: accounts, send, history
   return [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/transfer", label: "Transfer", icon: ArrowLeftRight },
+    { href: "/dashboard", label: "Accounts", icon: LayoutDashboard },
+    { href: "/transfer", label: "Send", icon: ArrowLeftRight },
+    { href: "/history", label: "History", icon: History },
   ];
 }
 
 /**
  * - Active link state
  * Whether a nav item is the current page.
+ *
+ * A sub-page lights the tab it belongs to: `/history/<account>` is History,
+ * while a tab's own landing path may be generic (`/history` means "the most
+ * recent history").
+ *
  * @param href - the destination path
  */
 function useIsActive(href: string): boolean {
@@ -131,9 +147,29 @@ function ThemeToggleItem({ onChoose }: { onChoose: () => void }) {
  * and sign out. Closes on outside click and Escape.
  */
 function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
-  const { user } = useAuth();
+  const { user, handleUnauthorized } = useAuth();
   const [open, setOpen] = React.useState(false);
+  const [revoking, setRevoking] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+
+  /**
+   * Retire every session, on every device.
+   * The current token is included, so this browser signs out too.
+   */
+  async function signOutEverywhere() {
+    setRevoking(true);
+    setOpen(false);
+    try {
+      await logoutAll();
+      toast.success("Signed out of every device");
+    } catch {
+      // the server may be unreachable; the local session still ends below
+      toast.info("Signed out on this device. Other devices may still be active.");
+    } finally {
+      setRevoking(false);
+      handleUnauthorized();
+    }
+  }
 
   React.useEffect(() => {
     if (!open) return;
@@ -192,15 +228,26 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
 
             {user?.systemUser ? (
               <Link
-                href="/admin/fund"
+                href="/admin"
                 role="menuitem"
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
               >
                 <Wrench className="size-4 text-muted-foreground" />
-                Admin: fund account
+                Admin dashboard
               </Link>
             ) : null}
+
+            <button
+              type="button"
+              role="menuitem"
+              disabled={revoking}
+              onClick={() => void signOutEverywhere()}
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent disabled:opacity-60"
+            >
+              <ShieldOff className="size-4 text-muted-foreground" />
+              Sign out everywhere
+            </button>
 
             <button
               type="button"

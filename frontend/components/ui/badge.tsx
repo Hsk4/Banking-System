@@ -19,14 +19,18 @@ const tones: Record<Tone, string> = {
 export function Badge({
   tone = "neutral",
   className,
+  title,
   children,
 }: {
   tone?: Tone;
   className?: string;
+  /** a hover explanation, e.g. "Frozen: contact support" */
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
         tones[tone],

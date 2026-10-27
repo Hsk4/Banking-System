@@ -70,7 +70,7 @@ export function FieldError({
 }) {
   if (!children && !visible) return null;
   return (
-    <div id={id} className="mt-1.5 text-xs text-destructive">
+    <div id={id} className="mt-1.5 text-xs font-medium text-destructive">
       {children}
     </div>
   );
