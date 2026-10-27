@@ -1,5 +1,17 @@
 name: apk
-on: workflow_dispatch
+
+# Manual runs build a debug APK for testing. Pushing a `v*` tag builds the
+# release APK and attaches it to that tag's GitHub Release, which is where the
+# published download lives (the APK is never committed to the repo).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+# `gh release create` needs to write the release
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -15,9 +27,45 @@ jobs:
       - run: bun run build:mobile && bunx cap sync android
         working-directory: frontend
         env: { NEXT_PUBLIC_API_URL: "${{ vars.API_URL }}" }
-      - run: chmod +x gradlew && ./gradlew assembleDebug
+
+      # The release build is signed with the debug keystore, which
+      # `android/app/keystore/` does not carry (it is git-ignored). The same
+      # certificate is already public in the Android SDK, so generating it here
+      # is reproducible and still lets the APK install over the previous build.
+      - name: Debug keystore
+        working-directory: frontend/android/app
+        run: |
+          mkdir -p keystore
+          keytool -genkeypair -v -keystore keystore/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      # `workflow_dispatch` builds the debug APK; a tag builds the release one
+      - name: Build APK
         working-directory: frontend/android
+        run: |
+          chmod +x gradlew
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            ./gradlew assembleRelease
+          else
+            ./gradlew assembleDebug
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
-          name: banking-debug-apk
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          name: banking-apk
+          path: frontend/android/app/build/outputs/apk/**/*.apk
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        working-directory: frontend/android/app/build/outputs/apk/release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp app-release.apk "banking-system-${TAG}.apk"
+          gh release create "$TAG" "banking-system-${TAG}.apk" \
+            --repo "${{ github.repository }}" \
+            --title "Banking $TAG" \
+            --generate-notes
