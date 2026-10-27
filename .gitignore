@@ -1,0 +1,36 @@
+# dependencies
+**/node_modules
+
+# build output
+**/.next
+**/out
+**/dist
+**/build
+*.tgz
+
+# logs
+**/logs
+*.log
+
+# env files
+**/.env
+**/.env.*
+!**/.env.example
+
+# caches
+**/.eslintcache
+**/.cache
+**/*.tsbuildinfo
+
+# local QA captures (kept on the `screenshots` branch)
+frontend/screenshots
+
+# android release signing keys
+**/*.jks
+**/*.keystore
+**/keystore.properties
+
+# misc
+**/.DS_Store
+**/.idea
+**/.vercel
