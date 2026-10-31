@@ -71,3 +71,20 @@ export function useHideBalances(): HideBalancesValue {
     }
   );
 }
+
+/**
+ * - A figure, or dots
+ * One place decides what "hidden" looks like, so a balance never leaks
+ * through a screen that forgot about the eye icon.
+ *
+ * @param children - the formatted figure
+ */
+export function Secret({ children }: { children: React.ReactNode }) {
+  const { hidden } = useHideBalances();
+  if (!hidden) return <>{children}</>;
+  return (
+    <span aria-label="Balance hidden" className="tracking-widest">
+      ••••••
+    </span>
+  );
+}

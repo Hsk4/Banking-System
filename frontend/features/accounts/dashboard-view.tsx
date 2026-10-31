@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
-import { useHideBalances } from "@/lib/hide-balances";
+import { Secret, useHideBalances } from "@/lib/hide-balances";
 import {
   ApiError,
   getAccounts,
@@ -42,34 +42,20 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { statusHelp, statusLabel } from "@/lib/status-help";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { cn } from "@/lib/cn";
+import {
+  BalanceHero,
+  CashFlowCard,
+  ReceiveDialog,
+  SendAgain,
+  useGreeting,
+  type BalanceState,
+} from "@/features/accounts/overview-cards";
 
 /** Show the cold-start notice when the first request takes longer than this. */
 const COLD_START_MS = 4_000;
 
 /** How many recent movements sit under each balance. */
 const LATEST_COUNT = 5;
-
-type BalanceState =
-  | { status: "loading" }
-  | { status: "ready"; balance: number }
-  | { status: "error" };
-
-/**
- * - A figure, or dots
- * One place decides what "hidden" looks like, so a balance never leaks
- * through a screen that forgot about the eye icon.
- *
- * @param children - the formatted figure
- */
-function Secret({ children }: { children: React.ReactNode }) {
-  const { hidden } = useHideBalances();
-  if (!hidden) return <>{children}</>;
-  return (
-    <span aria-label="Balance hidden" className="tracking-widest">
-      ••••••
-    </span>
-  );
-}
 
 /**
  * - Copy button
@@ -280,7 +266,7 @@ function AccountCard({
         ) : (
           <div>
             {/* the spec's "numbers come first" role: 30px on mobile, 36px up */}
-            <p className="flex items-baseline gap-1.5 text-[30px] font-semibold leading-none tracking-tight sm:text-[36px]">
+            <p className="font-display flex items-baseline gap-1.5 text-[32px] font-medium leading-none tracking-tight sm:text-[38px]">
               <span className="text-base font-medium text-muted-foreground">
                 PKR
               </span>
@@ -314,7 +300,10 @@ function AccountCard({
       <div className="flex min-w-0 items-center gap-1">
         {number ? (
           <>
-            <code className="font-mono text-sm tracking-wide" title="Account number">
+            <code
+              className="rounded-md bg-muted px-2 py-1 font-mono text-sm tracking-wide"
+              title="Account number"
+            >
               {number}
             </code>
             <CopyButton value={number} label="Copy account number" />
@@ -392,7 +381,10 @@ export function DashboardView() {
   const [coldStart, setColdStart] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
   const [opening, setOpening] = useState(false);
+  const greeting = useGreeting();
+  const firstName = user?.name?.trim().split(/\s+/)[0] ?? "";
   const [openError, setOpenError] = useState<string | null>(null);
 
   // the account being named, if any
@@ -592,7 +584,15 @@ export function DashboardView() {
     <PullToRefresh onRefresh={load}>
       <div>
         <div className="flex min-h-10 items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Your accounts</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-medium tracking-tight sm:text-3xl">
+              {greeting}
+              {firstName ? `, ${firstName}` : ""}
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Here is where your money stands today.
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -642,32 +642,53 @@ export function DashboardView() {
 
         <div className="mt-5">
           {loadingList ? (
-            <div className="grid gap-4 md:grid-cols-2">
-              <AccountCardSkeleton />
-              <AccountCardSkeleton />
+            <div className="space-y-4">
+              <Skeleton className="h-48 rounded-3xl" />
+              <div className="grid gap-4 md:grid-cols-2">
+                <AccountCardSkeleton />
+                <AccountCardSkeleton />
+              </div>
             </div>
           ) : hasAccounts ? (
-            <>
-              {hasAccounts && anyFunded === false ? (
-                <Alert tone="info" className="mb-4">
+            <div className="space-y-5">
+              <BalanceHero
+                accounts={accounts}
+                balances={balances}
+                onReceive={() => setReceiveOpen(true)}
+              />
+
+              {anyFunded === false ? (
+                <Alert tone="info">
                   <span className="font-semibold">No money yet.</span> An
                   account only holds what someone sends it. An administrator
                   adds the first funds, and after that people can pay you with
                   your account number.
                 </Alert>
               ) : null}
-              <div className="grid gap-4 md:grid-cols-2">
-                {accounts.map((account) => (
-                  <AccountCard
-                    key={account._id}
-                    account={account}
-                    state={balances[account._id] ?? { status: "loading" }}
-                    onRetry={() => void loadBalance(account._id)}
-                    onRename={() => startRename(account)}
-                  />
-                ))}
+
+              <SendAgain
+                fromAccountId={
+                  accounts.find((a) => a.status === "ACTIVE")?._id ?? null
+                }
+              />
+
+              <CashFlowCard accounts={accounts} />
+
+              <div>
+                <h2 className="mb-3 text-xl font-medium">Your accounts</h2>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {accounts.map((account) => (
+                    <AccountCard
+                      key={account._id}
+                      account={account}
+                      state={balances[account._id] ?? { status: "loading" }}
+                      onRetry={() => void loadBalance(account._id)}
+                      onRename={() => startRename(account)}
+                    />
+                  ))}
+                </div>
               </div>
-            </>
+            </div>
           ) : listError ? null : (
             <Card className="border p-8 text-center sm:p-10">
               <div className="mx-auto grid size-12 place-items-center rounded-full bg-secondary text-secondary-foreground">
@@ -686,6 +707,12 @@ export function DashboardView() {
             </Card>
           )}
         </div>
+
+        <ReceiveDialog
+          open={receiveOpen}
+          onOpenChange={setReceiveOpen}
+          accounts={accounts ?? []}
+        />
 
         <Dialog
           open={dialogOpen}

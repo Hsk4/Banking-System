@@ -3,19 +3,23 @@ import { cn } from "@/lib/cn";
 
 /**
  * - Card
- * `--card` surface, 1px border, no shadow (shadows are reserved for dialogs).
+ * `--card` surface on warm paper, 1px border and a barely-there lift, so
+ * cards read as sheets resting on the page rather than outlined boxes.
  */
 export function Card({
   className,
+  style,
   children,
 }: {
   className?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   return (
     <div
+      style={style}
       className={cn(
-        "rounded-xl border-border bg-card text-card-foreground",
+        "rounded-2xl border-border bg-card text-card-foreground shadow-card",
         className,
       )}
     >

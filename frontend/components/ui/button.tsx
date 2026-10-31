@@ -7,7 +7,7 @@ type Size = "md" | "sm" | "icon";
 /** Class map for the three button styles in the design spec. */
 const variants: Record<Variant, string> = {
   primary:
-    "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-primary/50",
+    "bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_1px_2px_rgb(8_45_35/0.25)] hover:brightness-110 active:translate-y-px disabled:bg-primary/50 disabled:shadow-none",
   // the hover is a tint, not a fill: a secondary action must never read as
   // the teal primary sitting beside it
   outline:

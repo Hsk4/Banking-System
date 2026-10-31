@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/cn";
+import { Logo } from "@/components/logo";
 import type { User } from "@/lib/types";
 
 /** One entry in the top bar and the mobile bottom bar. */
@@ -204,7 +205,7 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
         aria-expanded={open}
         aria-label="Your account"
         onClick={() => setOpen((value) => !value)}
-        className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground transition-colors duration-150 hover:brightness-95"
+        className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-bold text-secondary-foreground ring-1 ring-brass/40 ring-offset-2 ring-offset-background transition duration-150 hover:ring-brass"
       >
         {initials}
       </button>
@@ -212,7 +213,7 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
       {open ? (
         <div
           role="menu"
-          className="animate-fade-in absolute right-0 top-11 z-40 w-60 rounded-xl border-border bg-popover p-1.5 shadow-lg"
+          className="animate-fade-in absolute right-0 top-11 z-40 w-60 rounded-2xl border border-border bg-popover p-1.5 shadow-xl"
         >
           <div className="border-b border-border px-2.5 py-2">
             <p className="truncate text-sm font-medium">
@@ -276,20 +277,13 @@ function TopNavLink({ href, label }: { href: string; label: string }) {
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex h-14 items-center px-1 text-sm transition-colors duration-150",
+        "flex h-9 items-center rounded-full px-3.5 text-sm transition-colors duration-150",
         active
-          ? "font-medium text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-primary font-semibold text-primary-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
       )}
     >
       {label}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-x-0 bottom-0 h-0.5 rounded-full",
-          active ? "bg-primary" : "bg-transparent",
-        )}
-      />
     </Link>
   );
 }
@@ -313,18 +307,19 @@ function BottomNavLink({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs transition-colors duration-150",
+        "flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors duration-150",
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
+      {/* the active tab sits in a soft pill, so it reads at a glance */}
       <span
-        aria-hidden
         className={cn(
-          "absolute inset-x-4 top-0 h-0.5 rounded-full",
-          active ? "bg-primary" : "bg-transparent",
+          "grid h-7 w-14 place-items-center rounded-full transition-colors duration-150",
+          active ? "bg-secondary" : "bg-transparent",
         )}
-      />
-      <Icon className="size-5" />
+      >
+        <Icon className="size-5" />
+      </span>
       {label}
     </Link>
   );
@@ -341,18 +336,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 border-b border-border bg-card">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-240 items-center gap-2 px-4 md:gap-8 md:px-6">
           <Link
             href={homeFor(user)}
-            className="text-base font-semibold tracking-tight"
+            aria-label="Ledger home"
+            className="rounded-lg"
           >
-            Ledger
+            <Logo markClassName="size-8" />
           </Link>
 
           {/* no top nav below md: the bottom bar covers it */}
           <nav
-            className="hidden h-full items-center gap-6 md:flex"
+            className="hidden h-full items-center gap-1 md:flex"
             aria-label="Main"
           >
             {nav.map((item) => (
@@ -373,7 +369,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border/70 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       >
         {nav.map((item) => (
           <BottomNavLink
