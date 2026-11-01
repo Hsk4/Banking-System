@@ -11,6 +11,13 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    // Gradle output under android/: `build/` above only matches the project
+    // root, so these come back in on the frontend branch, which has no
+    // root .gitignore to ignore them
+    // Built web assets copied into the Capacitor project - not source
+    "android/app/src/main/assets/public/**",
+    "android/**/build/**",
+    "android/.gradle/**",
     "next-env.d.ts",
   ]),
 ]);
