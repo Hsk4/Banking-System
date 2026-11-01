@@ -1,3 +1,17 @@
+// The Capacitor-generated parts of this project (`app/capacitor.build.gradle`,
+// `capacitor.settings.gradle` and the plugin modules) are gitignored and only
+// appear after `bun run build:mobile` + `cap sync android`. Generate them when
+// the checkout lacks them, so the APK builds from a fresh clone.
+def capacitorFiles = [file('capacitor.build.gradle'), file('../capacitor.settings.gradle')]
+if (capacitorFiles.any { !it.exists() }) {
+    println 'Capacitor files missing - running `cap sync android`'
+    exec {
+        workingDir rootProject.projectDir.parentFile
+        // bun runs the local cap binary, and the CI image already has it
+        commandLine 'bun', 'run', 'cap', 'sync', 'android'
+    }
+}
+
 apply plugin: 'com.android.application'
 
 android {
@@ -11,8 +25,8 @@ android {
         // whose versionCode is not higher than the one already on the device
         // the displayed version is V.1.0.1, but the build number stays above
         // the previously installed build so Android accepts the update
-        versionCode 2
-        versionName "V.1.0.1"
+        versionCode 3
+        versionName "V.1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
