@@ -1,65 +1,70 @@
 @import "tailwindcss";
 
 /*
- * Theme tokens from doc/design-spec.md.
+ * Ledger - ink and brass.
  * Light lives in :root, dark under `.dark` (driven by next-themes, which
  * follows the system setting until the user picks a side).
+ * Values come from the design spec in doc/design-spec.md.
  */
 
 :root {
-  --background: #f4f7f8;
-  --foreground: #122026;
-  --card: #ffffff;
-  --card-foreground: #122026;
-  --popover: #ffffff;
-  --popover-foreground: #122026;
-  --primary: #0b6e69;
-  --primary-foreground: #ffffff;
-  --secondary: #dff1ef;
-  --secondary-foreground: #0b4f4b;
-  --muted: #e8eef0;
-  --muted-foreground: #52646c;
-  --accent: #dff1ef;
-  --accent-foreground: #0b4f4b;
+  --background: #f5f2ea;
+  --foreground: #14201b;
+  --card: #fffdf8;
+  --card-foreground: #14201b;
+  --popover: #fffdf8;
+  --popover-foreground: #14201b;
+  --primary: #0e4d3c;
+  --primary-foreground: #f7f1e1;
+  --secondary: #e3ece4;
+  --secondary-foreground: #0e4d3c;
+  --muted: #ece8dc;
+  --muted-foreground: #5b655e;
+  --accent: #ece8dc;
+  --accent-foreground: #14201b;
   --destructive: #a3262a;
   --destructive-foreground: #ffffff;
-  --border: #d6e0e4;
-  --input: #c3d0d5;
-  --ring: #0b6e69;
+  --border: #ddd8c8;
+  --input: #cbc5b2;
+  --ring: #0e4d3c;
+  --brass: #a87a2a;
+  --brass-soft: #f4e8c8;
 
   /* semantic status - deliberately not the brand accent */
   --success: #1f6f3f;
-  --success-soft: #dff3e6;
+  --success-soft: #e0f0e5;
   --warning: #8a5a00;
-  --warning-soft: #fbf0d6;
+  --warning-soft: #f7ebcf;
   --danger: #a3262a;
-  --danger-soft: #fbe3e3;
-  --info: #0b6e69;
-  --info-soft: #dff1ef;
+  --danger-soft: #f8e2e0;
+  --info: #0e4d3c;
+  --info-soft: #e3ece4;
 
   --radius: 0.625rem;
 }
 
 .dark {
-  --background: #0e1519;
-  --foreground: #e6eef1;
-  --card: #151e24;
-  --card-foreground: #e6eef1;
-  --popover: #151e24;
-  --popover-foreground: #e6eef1;
-  --primary: #4fc7bf;
-  --primary-foreground: #06201e;
-  --secondary: #12302f;
-  --secondary-foreground: #bdefea;
-  --muted: #1c2830;
-  --muted-foreground: #9db0b8;
-  --accent: #1c2830;
-  --accent-foreground: #e6eef1;
+  --background: #0a110f;
+  --foreground: #e9efe9;
+  --card: #111b17;
+  --card-foreground: #e9efe9;
+  --popover: #111b17;
+  --popover-foreground: #e9efe9;
+  --primary: #5fd1a2;
+  --primary-foreground: #06201a;
+  --secondary: #163229;
+  --secondary-foreground: #bdefd5;
+  --muted: #1a2621;
+  --muted-foreground: #9bb0a6;
+  --accent: #1a2621;
+  --accent-foreground: #e9efe9;
   --destructive: #ff8a8d;
   --destructive-foreground: #3a1a1c;
-  --border: #26343c;
-  --input: #31424b;
-  --ring: #4fc7bf;
+  --border: #233430;
+  --input: #2f433c;
+  --ring: #5fd1a2;
+  --brass: #dca847;
+  --brass-soft: #2c2412;
 
   --success: #6fd49a;
   --success-soft: #14301f;
@@ -67,13 +72,15 @@
   --warning-soft: #2e2510;
   --danger: #ff8a8d;
   --danger-soft: #3a1a1c;
-  --info: #4fc7bf;
-  --info-soft: #12302f;
+  --info: #5fd1a2;
+  --info-soft: #163229;
 }
 
 /*
- * Map the tokens onto Tailwind's color utilities so `bg-card`, `text-muted-foreground`,
- * `border-input`, `bg-success-soft` etc. resolve to the shadcn names.
+ * Map the tokens onto Tailwind's colour utilities so `bg-card`,
+ * `text-muted-foreground`, `border-input`, `bg-brass-soft` etc. resolve.
+ * Self-hosted font families are registered here too, so the build needs no
+ * network and the Capacitor app works offline.
  */
 @theme inline {
   --color-background: var(--background);
@@ -95,6 +102,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
 
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
@@ -105,15 +114,17 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
 
-  /* inputs and buttons use the base radius, cards one step up */
+  /* inputs and buttons use the base radius, cards one step up (16px) */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: 1rem;
 
-  /* next/font puts the real stack on --font-geist-*; fall back if it is absent */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
 }
 
 /* Mobile bottom nav height (56px) plus the iOS safe area. */
@@ -138,7 +149,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* the spec's 2px teal ring on every interactive element */
+  /* headings and money figures are set in Fraunces */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* a 2px ring on every interactive element */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
@@ -149,6 +168,27 @@
     scrollbar-width: thin;
     scrollbar-color: var(--input) transparent;
   }
+}
+
+/*
+ * The emerald brand surface shared by the balance hero and the sign-in panel:
+ * a radial gradient with a faint eight-point star lattice on top.
+ */
+@utility bg-hero {
+  background-color: #082d23;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 6l4.2 17.8L50 28l-17.8 4.2L28 50l-4.2-17.8L6 28l17.8-4.2z' fill='none' stroke='%23ffffff' stroke-opacity='.06' stroke-width='1'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 30% 20%, #136a52 0%, #082d23 70%);
+  background-repeat: repeat, no-repeat;
+  background-size:
+    56px 56px,
+    cover;
+}
+
+.dark .bg-hero {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cpath d='M28 6l4.2 17.8L50 28l-17.8 4.2L28 50l-4.2-17.8L6 28l17.8-4.2z' fill='none' stroke='%23ffffff' stroke-opacity='.05' stroke-width='1'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 30% 20%, #12604a 0%, #06211a 70%);
 }
 
 @keyframes transfer-slide {
@@ -169,8 +209,24 @@
   }
 }
 
+/* cards rise in with a short stagger; the delay comes from an inline style */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @utility animate-fade-in {
   animation: fade-in 150ms ease-out;
+}
+
+@utility animate-rise-in {
+  animation: rise-in 320ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {

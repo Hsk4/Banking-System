@@ -113,9 +113,7 @@ export function RegisterForm() {
 
   return (
     <div>
-      <h1 className="text-center text-2xl font-semibold tracking-tight">
-        Create your account
-      </h1>
+      <h1 className="text-center text-2xl">Create your account</h1>
       <p className="mt-1 text-center text-sm text-muted-foreground">
         One login, one place for your balances
       </p>

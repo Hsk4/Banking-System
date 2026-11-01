@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { TransferView } from "@/features/transfer/transfer-view";
 
 export const metadata: Metadata = {
-  title: "Send money · Banking",
+  title: "Send money",
 };
 
 /**

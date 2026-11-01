@@ -19,7 +19,9 @@ import { toast } from "sonner";
 import { useTheme } from "next-themes";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/cn";
+import { initialsOf } from "@/lib/format";
 import type { User } from "@/lib/types";
+import { Logo } from "./logo";
 
 /** One entry in the top bar and the mobile bottom bar. */
 interface NavItem {
@@ -29,7 +31,7 @@ interface NavItem {
 }
 
 /** Where each role is sent by the wordmark. */
-export function homeFor(user: User | null): string {
+export function homeFor(user: User | null): NavItem["href"] {
   return user?.systemUser ? "/admin" : "/dashboard";
 }
 
@@ -37,9 +39,6 @@ export function homeFor(user: User | null): string {
  * - Navigation for the signed-in user
  * A system user is a pure administrator: they hold no accounts of their own,
  * so the customer destinations would only fail for them.
- *
- * `user` is null for the first frame after hydration, so a flash of the
- * customer links is possible for an admin - acceptable for now.
  */
 function navFor(user: User | null): NavItem[] {
   if (user?.systemUser) {
@@ -59,13 +58,7 @@ function navFor(user: User | null): NavItem[] {
 
 /**
  * - Active link state
- * Whether a nav item is the current page.
- *
- * A sub-page lights the tab it belongs to: `/history/<account>` is History,
- * while a tab's own landing path may be generic (`/history` means "the most
- * recent history").
- *
- * @param href - the destination path
+ * A sub-page lights the tab it belongs to (`/history?account=…` is History).
  */
 function useIsActive(href: string): boolean {
   const pathname = usePathname();
@@ -74,8 +67,7 @@ function useIsActive(href: string): boolean {
 
 /**
  * - Theme toggle
- * Lives in the top bar (and in the user menu on mobile). Follows the system
- * setting by default; this switches explicitly.
+ * Follows the system setting by default; this switches explicitly.
  */
 function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme, setTheme } = useTheme();
@@ -99,7 +91,7 @@ function ThemeToggle({ className }: { className?: string }) {
         className,
       )}
     >
-      {mounted && dark ? (
+      {dark ? (
         <Sun className="size-5" aria-hidden />
       ) : (
         <Moon className="size-5" aria-hidden />
@@ -108,11 +100,7 @@ function ThemeToggle({ className }: { className?: string }) {
   );
 }
 
-/**
- * - Theme toggle menu item
- * The icon button is hidden below `md`, so the user menu carries the same
- * control on mobile.
- */
+/** Theme toggle as a menu item, for the user menu on mobile. */
 function ThemeToggleItem({ onChoose }: { onChoose: () => void }) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
@@ -135,7 +123,11 @@ function ThemeToggleItem({ onChoose }: { onChoose: () => void }) {
       }}
       className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-accent md:hidden"
     >
-      {dark ? <Sun className="size-4" aria-hidden /> : <Moon className="size-4" aria-hidden />}
+      {dark ? (
+        <Sun className="size-4" aria-hidden />
+      ) : (
+        <Moon className="size-4" aria-hidden />
+      )}
       {mounted ? (dark ? "Light theme" : "Dark theme") : "Theme"}
     </button>
   );
@@ -143,8 +135,9 @@ function ThemeToggleItem({ onChoose }: { onChoose: () => void }) {
 
 /**
  * - User menu
- * Initials button opening a panel with the user, theme toggle, the admin link
- * and sign out. Closes on outside click and Escape.
+ * Initials inside a brass ring, opening a panel with the user, the theme
+ * toggle on mobile, the admin link and sign out. Closes on outside click
+ * and Escape.
  */
 function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
   const { user, handleUnauthorized } = useAuth();
@@ -152,10 +145,7 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
   const [revoking, setRevoking] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
-  /**
-   * Retire every session, on every device.
-   * The current token is included, so this browser signs out too.
-   */
+  /** Retire every session, on every device, including this browser. */
   async function signOutEverywhere() {
     setRevoking(true);
     setOpen(false);
@@ -164,7 +154,9 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
       toast.success("Signed out of every device");
     } catch {
       // the server may be unreachable; the local session still ends below
-      toast.info("Signed out on this device. Other devices may still be active.");
+      toast.info(
+        "Signed out on this device. Other devices may still be active.",
+      );
     } finally {
       setRevoking(false);
       handleUnauthorized();
@@ -187,15 +179,6 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
     };
   }, [open]);
 
-  const name = user?.name ?? "";
-  const initials =
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "?";
-
   return (
     <div ref={ref} className="relative">
       <button
@@ -204,15 +187,15 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
         aria-expanded={open}
         aria-label="Your account"
         onClick={() => setOpen((value) => !value)}
-        className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground transition-colors duration-150 hover:brightness-95"
+        className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground ring-2 ring-brass ring-offset-2 ring-offset-background transition-colors hover:brightness-95"
       >
-        {initials}
+        {initialsOf(user?.name ?? "")}
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="animate-fade-in absolute right-0 top-11 z-40 w-60 rounded-xl border-border bg-popover p-1.5 shadow-lg"
+          className="animate-fade-in absolute right-0 top-11 z-40 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-lg"
         >
           <div className="border-b border-border px-2.5 py-2">
             <p className="truncate text-sm font-medium">
@@ -265,10 +248,7 @@ function UserMenu({ signOut }: { signOut: () => Promise<void> }) {
   );
 }
 
-/**
- * - Top bar link
- * Hidden below `md`, where the bottom bar takes over navigation.
- */
+/** Top bar link: a pill behind the active tab. Hidden below `md`. */
 function TopNavLink({ href, label }: { href: string; label: string }) {
   const active = useIsActive(href);
   return (
@@ -276,28 +256,18 @@ function TopNavLink({ href, label }: { href: string; label: string }) {
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex h-14 items-center px-1 text-sm transition-colors duration-150",
+        "rounded-full px-3.5 py-1.5 text-sm transition-colors duration-150",
         active
-          ? "font-medium text-foreground"
+          ? "bg-secondary font-medium text-secondary-foreground"
           : "text-muted-foreground hover:text-foreground",
       )}
     >
       {label}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-x-0 bottom-0 h-0.5 rounded-full",
-          active ? "bg-primary" : "bg-transparent",
-        )}
-      />
     </Link>
   );
 }
 
-/**
- * - Bottom bar link
- * Mobile only; the active item uses the teal colour plus a top indicator.
- */
+/** Bottom bar link: a soft pill behind the active icon. Mobile only. */
 function BottomNavLink({
   href,
   label,
@@ -305,7 +275,7 @@ function BottomNavLink({
 }: {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: NavItem["icon"];
 }) {
   const active = useIsActive(href);
   return (
@@ -313,18 +283,19 @@ function BottomNavLink({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "relative flex min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs transition-colors duration-150",
-        active ? "text-primary" : "text-muted-foreground",
+        "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 text-xs transition-colors duration-150",
+        active ? "font-medium text-primary" : "text-muted-foreground",
       )}
     >
       <span
-        aria-hidden
         className={cn(
-          "absolute inset-x-4 top-0 h-0.5 rounded-full",
-          active ? "bg-primary" : "bg-transparent",
+          "grid h-7 w-12 place-items-center rounded-full",
+          active && "bg-secondary",
         )}
-      />
-      <Icon className="size-5" />
+        aria-hidden
+      >
+        <Icon className="size-5" />
+      </span>
       {label}
     </Link>
   );
@@ -332,8 +303,8 @@ function BottomNavLink({
 
 /**
  * - App shell
- * 56px top bar with the wordmark, the role's nav links and the avatar menu;
- * content capped at 960px; a fixed bottom bar below `md`.
+ * A blurred translucent header with the logo, the role's nav pills and the
+ * avatar menu; content capped at 960px; a blurred bottom bar below `md`.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { signOut, user } = useAuth();
@@ -341,20 +312,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 border-b border-border bg-card">
+      <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-240 items-center gap-2 px-4 md:gap-8 md:px-6">
-          <Link
-            href={homeFor(user)}
-            className="text-base font-semibold tracking-tight"
-          >
-            Ledger
+          <Link href={homeFor(user)} aria-label="Ledger home">
+            <Logo />
           </Link>
 
           {/* no top nav below md: the bottom bar covers it */}
-          <nav
-            className="hidden h-full items-center gap-6 md:flex"
-            aria-label="Main"
-          >
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
             {nav.map((item) => (
               <TopNavLink key={item.href} href={item.href} label={item.label} />
             ))}
@@ -373,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border/70 bg-background/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       >
         {nav.map((item) => (
           <BottomNavLink
@@ -387,5 +352,3 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
-

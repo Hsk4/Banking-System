@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { AdminAuditView } from "@/features/admin/admin-audit";
 import { AdminTabs } from "@/features/admin/admin-tabs";
 
 export const metadata: Metadata = {
-  title: "Audit log · Admin · Banking",
+  title: "Audit log",
 };
 
 /**
@@ -21,3 +21,4 @@ export default function AdminAuditPage() {
     </div>
   );
 }
+

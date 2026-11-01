@@ -79,9 +79,7 @@ export function LoginForm() {
 
   return (
     <div>
-      <h1 className="text-center text-2xl font-semibold tracking-tight">
-        Welcome back
-      </h1>
+      <h1 className="text-center text-2xl">Welcome back</h1>
       <p className="mt-1 text-center text-sm text-muted-foreground">
         Sign in to your accounts
       </p>

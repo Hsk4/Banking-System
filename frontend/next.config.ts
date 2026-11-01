@@ -11,7 +11,7 @@ import type { NextConfig } from "next";
  *
  * The backend's `CORS_ORIGIN` must list every origin the app is served from:
  * the Vercel domain for web, `https://localhost` for Android and
- * `capacitor://localhost` for iOS. See docs/capacitor-adding-plan.md.
+ * `capacitor://localhost` for iOS.
  */
 const nextConfig: NextConfig = {
   output: "export", // static HTML/CSS/JS, for both Vercel and the native shell

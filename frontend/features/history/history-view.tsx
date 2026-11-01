@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { useHideBalances } from "@/lib/hide-balances";
+import { Secret } from "@/lib/hide-balances";
 import { ApiError, getAccounts, getHistory, statementUrl } from "@/lib/api";
 import {
   formatAccountNumber,
@@ -56,7 +56,6 @@ function EntryRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const { hidden } = useHideBalances();
   const moneyIn = entry.direction === "CREDIT";
 
   return (
@@ -103,16 +102,11 @@ function EntryRow({
         </span>
 
         <span className="shrink-0 text-right">
-          <span
-            className={cn(
-              "block text-sm font-semibold tabular-nums",
-              moneyIn ? "text-success" : "text-foreground",
-            )}
-          >
-            {hidden ? "••••" : formatSignedAmount(entry.amount)}
+          <span className={cn("block text-sm font-semibold tabular-nums", moneyIn && "text-success")}>
+            <Secret>{formatSignedAmount(entry.amount)}</Secret>
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
-            {hidden ? "••••" : `Bal ${formatMoney(entry.balanceAfter)}`}
+            <Secret>Bal {formatMoney(entry.balanceAfter)}</Secret>
           </span>
         </span>
       </button>
@@ -426,7 +420,7 @@ function HistoryContent() {
         </div>
       ) : null}
 
-      {/* filters */}
+      {/* one row: direction, dates, export */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-1 flex-wrap items-center gap-1 rounded-(--radius) border border-border bg-card p-1">
           {(["all", "in", "out"] as const).map((value) => (
@@ -453,20 +447,36 @@ function HistoryContent() {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowFilters((value) => !value)}
-          aria-expanded={showFilters}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <SlidersHorizontal className="size-4" aria-hidden />
-          Dates
-          {filterCount > (filters.direction !== "all" ? 1 : 0) ? (
-            <span className="rounded-full bg-secondary px-1.5 text-xs text-secondary-foreground">
-              {filterCount}
-            </span>
-          ) : null}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowFilters((value) => !value)}
+            aria-expanded={showFilters}
+            className={cn(
+              "inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-sm hover:bg-accent",
+              showFilters ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            <SlidersHorizontal className="size-4" aria-hidden />
+            Dates
+            {filterCount > (filters.direction !== "all" ? 1 : 0) ? (
+              <span className="rounded-full bg-secondary px-1.5 text-xs text-secondary-foreground">
+                {filterCount}
+              </span>
+            ) : null}
+          </button>
+          <a
+            href={statementUrl(accountId, {
+              direction: filters.direction,
+              from: filters.from || undefined,
+              to: filters.to || undefined,
+            })}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Download className="size-4" aria-hidden />
+            CSV
+          </a>
+        </div>
       </div>
 
       {showFilters ? (
@@ -527,29 +537,13 @@ function HistoryContent() {
         </Card>
       ) : null}
 
-      {/* export and count */}
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground" aria-live="polite">
-          {loading
-            ? "Loading…"
-            : `${entries?.length ?? 0}${cursor ? "+" : ""} ${
-                (entries?.length ?? 0) === 1 ? "entry" : "entries"
-              }`}
-        </p>
-        {accountId ? (
-          <a
-            href={statementUrl(accountId, {
-              direction: filters.direction,
-              from: filters.from || undefined,
-              to: filters.to || undefined,
-            })}
-            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary hover:underline sm:min-h-9"
-          >
-            <Download className="size-4" aria-hidden />
-            Download CSV
-          </a>
-        ) : null}
-      </div>
+      <p className="mt-3 text-xs text-muted-foreground" aria-live="polite">
+        {loading
+          ? "Loading…"
+          : `${entries?.length ?? 0}${cursor ? "+" : ""} ${
+              (entries?.length ?? 0) === 1 ? "entry" : "entries"
+            }`}
+      </p>
 
       {error ? (
         <Alert tone="danger" className="mt-3">
