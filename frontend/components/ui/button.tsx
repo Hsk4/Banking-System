@@ -6,8 +6,9 @@ type Size = "md" | "sm" | "icon";
 
 /** Class map for the three button styles in the design spec. */
 const variants: Record<Variant, string> = {
+  // the inset highlight is the spec's faint inner light on every button
   primary:
-    "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-primary/50",
+    "bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.18)] hover:bg-primary/90 disabled:bg-primary/50",
   // the hover is a tint, not a fill: a secondary action must never read as
   // the teal primary sitting beside it
   outline:
@@ -46,7 +47,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        "inline-flex items-center gap-2 rounded-[var(--radius)] font-medium",
+        "inline-flex items-center gap-2 rounded-xl font-medium",
         "transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60",
         variants[variant],
         sizes[size],

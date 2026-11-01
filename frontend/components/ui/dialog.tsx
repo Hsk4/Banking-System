@@ -52,7 +52,7 @@ export function Dialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         aria-hidden
-        className="absolute inset-0 bg-black/40 transition-opacity duration-150"
+        className="absolute inset-0 bg-foreground/30 backdrop-blur-sm transition-opacity duration-150"
         onClick={() => onOpenChange(false)}
       />
       <div
@@ -62,8 +62,8 @@ export function Dialog({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "relative w-full max-w-[420px] rounded-xl border-border bg-card p-6",
-          "shadow-lg outline-none",
+          "animate-rise-in relative w-full max-w-[420px] rounded-2xl border border-border bg-card p-6",
+          "shadow-xl outline-none",
         )}
       >
         <button
@@ -75,7 +75,7 @@ export function Dialog({
           <X className="size-4" />
         </button>
 
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="text-lg">{title}</h2>
         {description ? (
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         ) : null}

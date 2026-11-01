@@ -1,10 +1,10 @@
-import { Suspense } from "react";
+﻿import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AdminFundView } from "@/features/admin-fund-view";
 import { Card, Skeleton } from "@/components/ui/card";
 
 export const metadata: Metadata = {
-  title: "Fund an account · Banking",
+  title: "Fund an account",
 };
 
 /**
@@ -31,3 +31,4 @@ export default function AdminFundPage() {
     </Suspense>
   );
 }
+

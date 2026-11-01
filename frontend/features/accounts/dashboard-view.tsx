@@ -9,14 +9,14 @@ import {
   ArrowUpRight,
   Check,
   Copy,
-  Eye,
-  EyeOff,
+  Pencil,
   RefreshCw,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
-import { useHideBalances } from "@/lib/hide-balances";
+import { Secret } from "@/lib/hide-balances";
+import { OverviewCards } from "./overview-cards";
 import {
   ApiError,
   getAccounts,
@@ -30,7 +30,6 @@ import {
   formatAccountNumber,
   formatDate,
   formatSignedAmount,
-  shortId,
 } from "@/lib/format";
 import type { Account, HistoryEntry } from "@/lib/types";
 import { Alert } from "@/components/ui/alert";
@@ -53,23 +52,6 @@ type BalanceState =
   | { status: "loading" }
   | { status: "ready"; balance: number }
   | { status: "error" };
-
-/**
- * - A figure, or dots
- * One place decides what "hidden" looks like, so a balance never leaks
- * through a screen that forgot about the eye icon.
- *
- * @param children - the formatted figure
- */
-function Secret({ children }: { children: React.ReactNode }) {
-  const { hidden } = useHideBalances();
-  if (!hidden) return <>{children}</>;
-  return (
-    <span aria-label="Balance hidden" className="tracking-widest">
-      ••••••
-    </span>
-  );
-}
 
 /**
  * - Copy button
@@ -230,11 +212,13 @@ function AccountCard({
   state,
   onRetry,
   onRename,
+  showActivity,
 }: {
   account: Account;
   state: BalanceState;
   onRetry: () => void;
   onRename: () => void;
+  showActivity: boolean;
 }) {
   const active = account.status === "ACTIVE";
   const number = account.accountNumber
@@ -243,22 +227,19 @@ function AccountCard({
   const help = statusHelp(account.status);
 
   return (
-    <Card className="flex flex-col gap-3 border p-5">
+    <Card className="animate-rise-in flex flex-col gap-3 border p-5">
+      {/* the account number in a small muted chip, with the status beside it */}
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={onRename}
-            className="truncate text-left text-sm font-medium hover:underline"
-            aria-label={`Name this account. Current name: ${account.label ?? "Account"}`}
-          >
-            {account.label ?? "Account"}
-          </button>
-        </div>
-        <Badge
-          tone={statusTone(account.status)}
-          title={help ?? undefined}
+        <button
+          type="button"
+          onClick={onRename}
+          className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+          aria-label={`Name this account. Current name: ${account.label ?? "Account"}`}
         >
+          {number ?? account.label ?? "Account"}
+          <Pencil className="size-3" aria-hidden />
+        </button>
+        <Badge tone={statusTone(account.status)} title={help ?? undefined}>
           {statusLabel(account.status)}
         </Badge>
       </div>
@@ -279,9 +260,9 @@ function AccountCard({
           </div>
         ) : (
           <div>
-            {/* the spec's "numbers come first" role: 30px on mobile, 36px up */}
-            <p className="flex items-baseline gap-1.5 text-[30px] font-semibold leading-none tracking-tight sm:text-[36px]">
-              <span className="text-base font-medium text-muted-foreground">
+            {/* the balance is the largest figure, set in Fraunces */}
+            <p className="flex items-baseline gap-1.5 font-display text-[30px] leading-none sm:text-[36px]">
+              <span className="font-sans text-base font-medium text-muted-foreground">
                 PKR
               </span>
               <span className="tabular-nums">
@@ -311,29 +292,13 @@ function AccountCard({
         </p>
       ) : null}
 
-      <div className="flex min-w-0 items-center gap-1">
-        {number ? (
-          <>
-            <code className="font-mono text-sm tracking-wide" title="Account number">
-              {number}
-            </code>
-            <CopyButton value={number} label="Copy account number" />
-          </>
-        ) : null}
-        <span className="text-xs text-muted-foreground">·</span>
-        <code
-          className="min-w-0 truncate font-mono text-xs text-muted-foreground"
-          title={account._id}
-        >
-          {shortId(account._id, 8)}
-        </code>
-        <CopyButton value={account._id} label="Copy account id" />
-      </div>
-
-      <LatestActivity accountId={account._id} />
+      {showActivity ? <LatestActivity accountId={account._id} /> : null}
 
       <div className="mt-auto flex min-h-11 items-center justify-between gap-3 border-t border-border pt-2">
-        <span className="text-xs text-muted-foreground">
+        <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
+          {number ? (
+            <CopyButton value={number.replace(/\D/g, "")} label="Copy account number" />
+          ) : null}
           Opened {formatDate(account.createdAt)}
         </span>
         <Link
@@ -378,7 +343,6 @@ function AccountCardSkeleton() {
  */
 export function DashboardView() {
   const { handleUnauthorized, user } = useAuth();
-  const { hidden, toggle } = useHideBalances();
   const router = useRouter();
   const isSystemUser = user?.systemUser === true;
 
@@ -591,32 +555,24 @@ export function DashboardView() {
   return (
     <PullToRefresh onRefresh={load}>
       <div>
-        <div className="flex min-h-10 items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Your accounts</h1>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggle}
-              aria-pressed={hidden}
-              aria-label={hidden ? "Show balances" : "Hide balances"}
-              className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        {hasAccounts && accounts ? <OverviewCards accounts={accounts} /> : null}
+
+        <div
+          className={cn(
+            "flex min-h-10 items-center justify-between gap-4",
+            hasAccounts && "mt-8",
+          )}
+        >
+          <h1 className="font-display text-2xl">Your accounts</h1>
+          {showHeaderAction ? (
+            <Button
+              variant="outline"
+              className="max-sm:h-9 max-sm:px-3"
+              onClick={() => setDialogOpen(true)}
             >
-              {hidden ? (
-                <EyeOff className="size-5" aria-hidden />
-              ) : (
-                <Eye className="size-5" aria-hidden />
-              )}
-            </button>
-            {showHeaderAction ? (
-              <Button
-                variant="outline"
-                className="max-sm:h-9 max-sm:px-3"
-                onClick={() => setDialogOpen(true)}
-              >
-                Open account
-              </Button>
-            ) : null}
-          </div>
+              Open account
+            </Button>
+          ) : null}
         </div>
 
         {coldStart ? (
@@ -664,6 +620,8 @@ export function DashboardView() {
                     state={balances[account._id] ?? { status: "loading" }}
                     onRetry={() => void loadBalance(account._id)}
                     onRename={() => startRename(account)}
+                    // one account is the norm, so only then is activity worth the space
+                    showActivity={accounts.length === 1}
                   />
                 ))}
               </div>

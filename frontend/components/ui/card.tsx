@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 
 /**
  * - Card
- * `--card` surface, 1px border, no shadow (shadows are reserved for dialogs).
+ * `--card` surface, 1px border, a 16px radius and a very light shadow.
  */
 export function Card({
   className,
@@ -15,7 +15,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-xl border-border bg-card text-card-foreground",
+        "rounded-2xl border-border bg-card text-card-foreground",
         className,
       )}
     >

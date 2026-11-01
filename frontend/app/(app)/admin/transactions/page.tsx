@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { AdminTransactionsView } from "@/features/admin/admin-transactions";
 import { AdminTabs } from "@/features/admin/admin-tabs";
 
 export const metadata: Metadata = {
-  title: "Transactions · Admin · Banking",
+  title: "Transactions",
 };
 
 /**
@@ -22,3 +22,4 @@ export default function AdminTransactionsPage() {
     </div>
   );
 }
+
